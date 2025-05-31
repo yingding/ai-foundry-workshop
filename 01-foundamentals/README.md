@@ -12,7 +12,8 @@ This repository currently based on AI Foundry Hub based Project with Agent Previ
 5. Open `http://127.0.0.1:7860/` in your browser
 
 ## Author's notes
-1. VENV: azagents3.12piphub for enterprise b10 azure-ai-projects SDK
+1. VENV: azagents3.12pip for Foundry project (Project v2) azure-ai-agents 1.0.0 SDK
+<!-- 2. VENV: azagents3.12piphub for enterprise b10 azure-ai-projects SDK -->
 
 ## Reference:
 * `Foundry project` and `hub based project` https://learn.microsoft.com/en-us/azure/ai-foundry/what-is-azure-ai-foundry#project-types
