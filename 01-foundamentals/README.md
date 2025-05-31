@@ -17,4 +17,5 @@ This repository currently based on AI Foundry Hub based Project with Agent Previ
 
 ## Reference:
 * `Foundry project` and `hub based project` https://learn.microsoft.com/en-us/azure/ai-foundry/what-is-azure-ai-foundry#project-types
+* `azure-ai-evaluation` samples https://pypi.org/project/azure-ai-evaluation/
 

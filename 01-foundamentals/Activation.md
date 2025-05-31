@@ -1,7 +1,7 @@
 ## Install packages (general)
 ```powershell
 $VERSION="3.12";
-$ENV_NAME="azagents";
+$ENV_NAME="azmultiagents";
 $ENV_SURFIX="pip";
 
 $ENV_FULL_NAME = "$ENV_NAME$VERSION$ENV_SURFIX";
@@ -9,9 +9,9 @@ $ENV_FULL_NAME = "$ENV_NAME$VERSION$ENV_SURFIX";
 $ENV_DIR="$env:USERPROFILE\Documents\VENV\";
 
 # absolute path of requirements.txt to install for the python venv
-$PROJ_DIR="$env:USERPROFILE\Documents\VCS\democollections\AI-Agent-Workshop-2025";
+$PROJ_DIR="$env:USERPROFILE\Documents\VCS\democollections\ai-foundry-workshop";
 # $SubProj="\"
-$SubProj=""
+$SubProj="01-foundamentals\"
 $PackageFile="$PROJ_DIR\${SubProj}requirements.txt";
 
 & "$ENV_DIR$ENV_FULL_NAME\Scripts\Activate.ps1";
