@@ -3,7 +3,7 @@
 cd $env:USERPROFILE\Documents\VCS\llm-train;
 
 $VERSION="3.12";
-$ENV_NAME="azmultiagents";
+$ENV_NAME="azfdydemo";
 $ENV_SURFIX="pip";
 $PM="pip";
 $WORK_DIR="$env:USERPROFILE\Documents\VENV\";
