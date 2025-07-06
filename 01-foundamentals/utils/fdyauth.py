@@ -13,9 +13,17 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables.
     All settings are validated through Pydantic's type system.
     """
+    # project_endpoint: str = Field(..., env="PROJECT_ENDPOINT")
     project_endpoint: str = Field(..., env="PROJECT_ENDPOINT")
     model_deployment_name: str = Field(..., env="MODEL_DEPLOYMENT_NAME")
     agent_name: str = Field(..., env="AGENT_NAME")
+    azure_openai_endpoint: str = Field(..., env="AZURE_OPENAI_ENDPOINT")
+    azure_openai_api_key: str = Field(..., env="AZURE_OPENAI_API_KEY")
+    azure_openai_api_version: str = Field(..., env="AZURE_OPENAI_API_VERSION")
+    # azure_subscription_id: str = Field(...,env="AZURE_SUBSCRIPTION_ID")
+    # resource_group_name: str = Field(..., env="RESOURCE_GROUP_NAME")
+    # project_name: str = Field(..., env="PROJECT_NAME")
+
     bing_connection_name: str = Field(..., env="BING_CONNECTION_NAME")
     project_api_version: str = Field(..., env="PROJECT_API_VERSION")
     azure_search_connection_name: str = Field(..., env="AZURE_SEARCH_CONNECTION_NAME")
