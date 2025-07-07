@@ -1,6 +1,16 @@
 # Introduction
-
 This repository provides sample code of Azure AI Foundry
+
+## Demo Samples
+#### `01-Foundamentals` Sub Folder
+sample notebooks showcase the Azure AI Foundry capabilities:
+
+* `01-enterpise-knowledge-agent.ipynb` contains sample agent with AI Search, Bing Search tools, block list
+* `02-medical-diagnostic-agent.ipynb` contains sample agent with Code Interpeter, File Search tools for data analytics task
+* `03-automated-evaluations.ipynb` contains sample of run automated evaluations for the output of a single agent in Foundry
+* ``04-sequential-multiagent-tracking.ipynb` contains sample of customized opentelemetry tracing of multi agent in a sequential turns tracing with custom function added to opentelemetry trace.
+
+
 
 # Useful References
 * Components of the Foundry Agent Service: https://blog.langchain.com/context-engineering-for-agents/
