@@ -6,7 +6,7 @@ This repository currently based on AI Foundry Hub based Project with Agent Previ
 ## Quickstart
 
 1. Create your python 3.12 environment with the `requirements_fdy.txt` file
-2. Attach your python venv to the `enterprise-knowledge-agent.ipynb`
+2. Attach your python venv to the `01-enterpise-knowledge-agent.ipynb` or other notebooks
 3. Create a `.env` file using the template `.env.example`
 4. Run all the notebook cell
 5. Open `http://127.0.0.1:7860/` in your browser
