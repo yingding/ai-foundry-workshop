@@ -1,11 +1,12 @@
 azure-ai-projects==1.0.0b12
 # ping the azure-ai-agents GA version, not the 1.1.0b1
 # bing grounding doesn't show up in the agent knowledge UI
-azure-ai-agents==1.1.0b3
+# azure-ai-agents==1.1.0b3
+azure-ai-agents==1.1.0b4
 azure-identity==1.23.0
 azure-ai-evaluation==1.9.0
 # eval need semantic kernel for agent converter
-semantic-kernel==1.34.0
+semantic-kernel==1.35.0
 # eval dependencies on promptflow-devkit on pillow < 11.1.0
 # pillow==11.3.0
 pillow==11.0.0
@@ -26,4 +27,8 @@ pydantic==2.11.7
 
 # opentelemetry 
 opentelemetry-sdk==1.31.1
+# opentelemetry-sdk==1.35.0
+# pin the 1.6.10 and wait for the 1.6.12 due to breaking change in 1.6.11
 azure-monitor-opentelemetry==1.6.10
+# logging_formatter with azure-monitor-opentelemetry==1.6.11
+# https://github.com/Azure/azure-sdk-for-python/issues/42097#issuecomment-3097358888
