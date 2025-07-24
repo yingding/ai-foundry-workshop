@@ -28,4 +28,5 @@ sample notebooks showcase the Azure AI Foundry capabilities:
 * AutoGen and Semantic Kernel Integration https://devblogs.microsoft.com/semantic-kernel/semantic-kernel-and-autogen-part-2/
 
 ## DeepResearch
+* https://learn.microsoft.com/en-us/azure/ai-foundry/agents/how-to/tools/deep-research-samples
 * https://learn.microsoft.com/en-us/azure/ai-foundry/agents/how-to/tools/deep-research

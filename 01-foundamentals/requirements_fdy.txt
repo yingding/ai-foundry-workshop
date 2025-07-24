@@ -1,8 +1,9 @@
 azure-ai-projects==1.0.0b12
 # ping the azure-ai-agents GA version, not the 1.1.0b1
 # bing grounding doesn't show up in the agent knowledge UI
-# azure-ai-agents==1.1.0b3
-azure-ai-agents==1.1.0b4
+# deep research tool works only with 1.1.0b3 not 1.1.0b4
+azure-ai-agents==1.1.0b3
+# azure-ai-agents==1.1.0b4
 azure-identity==1.23.0
 azure-ai-evaluation==1.9.0
 # eval need semantic kernel for agent converter
