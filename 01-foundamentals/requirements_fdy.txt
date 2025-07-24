@@ -29,6 +29,6 @@ pydantic==2.11.7
 opentelemetry-sdk==1.31.1
 # opentelemetry-sdk==1.35.0
 # pin the 1.6.10 and wait for the 1.6.12 due to breaking change in 1.6.11
-azure-monitor-opentelemetry==1.6.10
+azure-monitor-opentelemetry==1.6.12
 # logging_formatter with azure-monitor-opentelemetry==1.6.11
 # https://github.com/Azure/azure-sdk-for-python/issues/42097#issuecomment-3097358888

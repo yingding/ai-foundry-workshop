@@ -26,3 +26,6 @@ sample notebooks showcase the Azure AI Foundry capabilities:
 ## AutoGen with Foundry Agent Serivce
 * AutoGen extension for Foundry Agent Service https://microsoft.github.io/autogen/stable/user-guide/extensions-user-guide/azure-foundry-agent.html#
 * AutoGen and Semantic Kernel Integration https://devblogs.microsoft.com/semantic-kernel/semantic-kernel-and-autogen-part-2/
+
+## DeepResearch
+* https://learn.microsoft.com/en-us/azure/ai-foundry/agents/how-to/tools/deep-research
