@@ -7,6 +7,9 @@
 .env
 med_diag.env
 .env_westus
+.env_agent
+.env_agent_cdx
+
 
 # Virtual environment
 .venv/
