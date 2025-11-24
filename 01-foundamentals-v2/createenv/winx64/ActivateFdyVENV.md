@@ -11,7 +11,7 @@ $ENV_DIR="$env:USERPROFILE\Documents\VENV\";
 # absolute path of requirements.txt to install for the python venv
 $PROJ_DIR="$env:USERPROFILE\Documents\VCS\democollections\ai-foundry-workshop";
 # $SubProj="\"
-$SubProj="01-foundamentals\"
+$SubProj="01-foundamentals-v2\"
 $typeProj="_fdy"
 $PackageFile="$PROJ_DIR\${SubProj}requirements${typeProj}.txt";
 
