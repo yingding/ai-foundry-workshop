@@ -1,0 +1,56 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "manual": {
+                "type": "Request",
+                "kind": "Http",
+                "inputs": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "top": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "actions": {
+            "Read_Emails": {
+                "type": "Http",
+                "inputs": {
+                    "uri": "@concat('https://graph.microsoft.com/v1.0/me/messages?$top=', coalesce(triggerBody()?['top'], 10), '&$select=subject,from,receivedDateTime,bodyPreview,isRead')",
+                    "method": "GET",
+                    "headers": {
+                        "Authorization": "@triggerOutputs()?['headers']?['Authorization']"
+                    }
+                },
+                "runAfter": {}
+            },
+            "Return_Emails": {
+                "type": "Response",
+                "kind": "Http",
+                "inputs": {
+                    "statusCode": 200,
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "count": "@length(body('Read_Emails')?['value'])",
+                        "emails": "@body('Read_Emails')?['value']"
+                    }
+                },
+                "runAfter": {
+                    "Read_Emails": [
+                        "Succeeded"
+                    ]
+                }
+            }
+        },
+        "outputs": {}
+    },
+    "kind": "Stateful"
+}

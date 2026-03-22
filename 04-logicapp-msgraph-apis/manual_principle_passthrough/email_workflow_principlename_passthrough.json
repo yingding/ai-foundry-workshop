@@ -1,0 +1,65 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "manual": {
+                "type": "Request",
+                "kind": "Http",
+                "inputs": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "top": {
+                                "type": "integer",
+                                "description": "Number of emails to retrieve (default 10)"
+                            },
+                            "userPrincipalName": {
+                                "type": "string",
+                                "description": "The user principal name (email) of the mailbox to read, e.g. admin@contoso.onmicrosoft.com"
+                            }
+                        },
+                        "required": [
+                            "userPrincipalName"
+                        ]
+                    }
+                }
+            }
+        },
+        "actions": {
+            "Read_Emails": {
+                "type": "Http",
+                "inputs": {
+                    "uri": "@concat('https://graph.microsoft.com/v1.0/users/', triggerBody()?['userPrincipalName'], '/messages?$top=', coalesce(triggerBody()?['top'], 10), '&$select=subject,from,receivedDateTime,bodyPreview,isRead')",
+                    "method": "GET",
+                    "authentication": {
+                        "type": "ManagedServiceIdentity",
+                        "audience": "https://graph.microsoft.com"
+                    }
+                },
+                "runAfter": {}
+            },
+            "Return_Emails": {
+                "type": "Response",
+                "kind": "Http",
+                "inputs": {
+                    "statusCode": 200,
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "count": "@length(body('Read_Emails')?['value'])",
+                        "emails": "@body('Read_Emails')?['value']"
+                    }
+                },
+                "runAfter": {
+                    "Read_Emails": [
+                        "Succeeded"
+                    ]
+                }
+            }
+        },
+        "outputs": {}
+    },
+    "kind": "Stateful"
+}
