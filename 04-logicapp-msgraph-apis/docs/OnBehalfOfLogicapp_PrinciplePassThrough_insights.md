@@ -235,7 +235,7 @@ sequenceDiagram
     participant LA as Logic App Standard<br/>(MCP Server)
     participant Graph as Microsoft Graph API
 
-    User->>Foundry: "Read emails for admin@contoso.com"
+    User->>Foundry: "Read emails for user1@contoso.com"
     
     rect rgb(230, 240, 255)
         Note over Foundry, LA: Layer 1: Agent Identity → Logic App
