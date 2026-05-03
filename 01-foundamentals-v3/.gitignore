@@ -1,0 +1,6 @@
+uv.lock
+
+# Environment variables
+.env
+med_diag.env
+.env_westus

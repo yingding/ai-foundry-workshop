@@ -1,0 +1,26 @@
+[project]
+name = "01-foundamentals-v3"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "agent-framework==1.2.2",
+    "azure-ai-evaluation==1.16.6",
+    "azure-ai-projects==2.1.0",
+    "azure-identity==1.25.3",
+    "azure-mgmt-cognitiveservices==14.1.0",
+    "azure-mgmt-resourcegraph==8.0.0",
+    "azure-monitor-opentelemetry==1.8.7",
+    "gradio==6.14.0",
+    "ipykernel==7.2.0",
+    "ipywidgets==8.1.8",
+    "jupyter==1.1.1",
+    "matplotlib==3.10.9",
+    "opentelemetry-sdk==1.40.0",
+    "pillow==11.3.0",
+    "pydantic==2.13.3",
+    "pydantic-settings==2.14.0",
+    "python-dotenv==1.2.2",
+]

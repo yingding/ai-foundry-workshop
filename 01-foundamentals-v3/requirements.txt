@@ -1,0 +1,45 @@
+# azure-ai-projects==2.0.0b2
+# azure ai project include v2 prompt agent
+azure-ai-projects==2.1.0
+# use SDK to change content filter
+azure-mgmt-cognitiveservices==14.1.0
+# resolve sub_id / resource_group from the Foundry account name via ARG
+azure-mgmt-resourcegraph==8.0.0
+# ping the azure-ai-agents GA version, not the 1.1.0b1
+# bing grounding doesn't show up in the agent knowledge UI
+# deep research tool works only with 1.1.0b3 not 1.1.0b4
+
+# agent v1
+azure-identity==1.25.3
+
+# eval
+# azure-ai-evaluation==1.13.7
+azure-ai-evaluation==1.16.6
+
+# agent-framework==1.0.0b251120
+agent-framework==1.2.2
+
+# eval dependencies on promptflow-devkit on pillow < 11.1.0
+pillow==11.3.0
+# pillow==12.2.0
+# gradio==6.0.0
+gradio==6.14.0
+
+ipykernel==7.2.0
+ipywidgets==8.1.8
+jupyter==1.1.1
+matplotlib==3.10.9
+python-dotenv==1.2.2
+
+pydantic-settings==2.14.0
+pydantic==2.13.3
+# gradio is not supporting 2.12 pytdantic yet
+# pydantic==2.12.4
+
+# opentelemetry 
+# opentelemetry-sdk==1.38.0
+# azure-monitor-opentelemetry==1.8.2
+opentelemetry-sdk==1.40.0
+azure-monitor-opentelemetry==1.8.7 # need opentelemetry-sdk<=1.40.0 
+
+# https://github.com/Azure/azure-sdk-for-python/issues/42097#issuecomment-3097358888
