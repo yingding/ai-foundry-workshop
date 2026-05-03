@@ -4,3 +4,7 @@ uv.lock
 .env
 med_diag.env
 .env_westus
+
+__pycache__/
+.ipynb_checkpoints/
+
