@@ -7,6 +7,9 @@ Dev Day Foundry Deep Dive sample.
 ## 📚 Contents
 
 - [📝 Overview](#-overview)
+  - [Key SDKs](#key-sdks)
+- [📓 Notebooks](#-notebooks)
+  - [Notebook dependency graph](#notebook-dependency-graph)
 - [🚀 Get Started](#-get-started)
   - [Prerequisites](#prerequisites)
   - [Install from source (development)](#install-from-source-development)
@@ -14,7 +17,43 @@ Dev Day Foundry Deep Dive sample.
 
 ## 📝 Overview
 
-A hands-on walkthrough of building enterprise-grade agents with Azure AI Foundry, exercised through Jupyter notebooks in this folder.
+A hands-on walkthrough of building enterprise-grade agents with Azure AI Foundry, exercised through Jupyter notebooks in this folder. All notebooks use **Foundry Projects v2** (`azure-ai-projects>=2.0.0`) with the `openai_client.responses` and `openai_client.evals` APIs.
+
+The notebooks progress from single-agent construction (01–02), through multi-agent orchestration (03) and observability (05), to evaluation and safety testing (04, 06–07).
+
+### Key SDKs
+
+| Package | Purpose |
+|---------|---------|
+| `azure-ai-projects` ≥ 2.1 | Foundry Agent Services — create agents, run responses, upload files |
+| `azure-ai-evaluation` ≥ 1.16 | Cloud evaluators (quality, safety, NLP metrics) and red teaming |
+| `agent-framework` + `agent-framework-foundry` | Microsoft Agent Framework — multi-agent workflows |
+| `azure-monitor-opentelemetry` | Distributed tracing to Application Insights |
+| `gradio` ≥ 6.14 | Chat UI for interactive agent demos |
+
+## 📓 Notebooks
+
+| # | Notebook | Topic | Description |
+|---|----------|-------|-------------|
+| 01 | `01-enterprise-knowledge-agent.ipynb` | Agent + Tools | Build a Foundry prompt agent with **Bing Grounding** (live web search), **Azure AI Search** (knowledge base), and **function tools** (enterprise data). Gradio chat UI. |
+| 02 | `02-medical-diagnostic-agent.ipynb` | Agent + Code Interpreter | Medical diagnostic agent with **code interpreter** + **file search**. Analyzes lung cancer patient CSV data, generates scatter/jitter charts, and synthesizes treatment recommendations. Gradio UI with streaming. |
+| 03 | `03-sequential-workflow-agent.ipynb` | Multi-Agent Orchestration | Orchestrates the enterprise-knowledge-agent and med-diagnostic-agent in a sequential workflow. Two approaches: **A** — declarative YAML (`WorkflowAgentDefinition`), **B** — pro-code (`agent-framework` SDK `SequentialBuilder`). Also available as a standalone script (`03basic_workflow.py`) with DevUI. |
+| 04 | `04-automated-evaluations.ipynb` | Batch Evaluation | Cloud evaluation using Foundry's **OpenAI Evals API**. Scores pre-computed agent responses with relevance, violence, BLEU, F1, and METEOR evaluators. Includes RBAC role assignment and storage network diagnostics. |
+| 05 | `05-sequential-multiagent-tracing.ipynb` | Observability | **Sequential multi-agent tracing** — weather agent → conversion agent pipeline with **OpenTelemetry** spans exported to **Azure Monitor Application Insights**. |
+| 06 | `06-agent-auto-eval.ipynb` | Agent-Target Evaluation | Live agent evaluation — invokes the `med-diagnostic-agent` with test queries via the Responses API and scores live responses with task adherence, coherence, fluency, and violence evaluators. |
+| 07 | `07-red-team-agent.ipynb` | Red Teaming | Automated adversarial testing of `med-diagnostic-agent` using the **AI Red Teaming Agent** with PyRIT-based attack strategies (Flip, Base64, Jailbreak, IndirectJailbreak) and safety evaluators (prohibited actions, data leakage, code vulnerability, violence). |
+
+### Notebook dependency graph
+
+```
+01 → standalone (creates enterprise-knowledge-agent)
+02 → standalone (creates med-diagnostic-agent)
+03 → depends on 01 + 02 (orchestrates both agents)
+04 → standalone (creates seattle-tourist-agent, runs batch eval)
+05 → standalone (creates weather + conversion agents)
+06 → depends on 02 (evaluates med-diagnostic-agent)
+07 → depends on 02 (red teams med-diagnostic-agent)
+```
 
 ## 🚀 Get Started
 
