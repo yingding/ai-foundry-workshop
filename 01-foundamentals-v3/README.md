@@ -77,3 +77,79 @@ If you select the venv from the Python interpreter picker but the notebook kerne
 
 This restores the classic Python interpreter discovery that the Jupyter extension relies on.
 
+## 🤖 Running the Workflow Script (`03basic_workflow.py`)
+
+### What it does
+
+A content-review workflow with quality-based routing, built with Microsoft Agent Framework's `WorkflowBuilder`:
+
+```
+Writer → Reviewer → [score >= 80] → Publisher → Summarizer
+                  → [score < 80]  → Editor → Publisher → Summarizer
+```
+
+- **Writer** generates content from user input
+- **Reviewer** evaluates quality (structured JSON with scores 0–100)
+- If score < 80 → **Editor** improves the content based on feedback
+- **Publisher** formats the final content
+- **Summarizer** creates a publication report
+
+### Prerequisites
+
+1. Copy `.env.example` to `.env` and fill in your Azure credentials:
+   ```bash
+   cp .env.example .env
+   ```
+2. Required env vars: `PROJECT_ENDPOINT`, `MODEL_DEPLOYMENT_NAME`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_API_VERSION`, `BING_CONNECTION_NAME`, `AZURE_SEARCH_CONNECTION_NAME`, `AZURE_SEARCH_INDEX_NAME`
+
+### Run with DevUI
+
+```bash
+cd 01-foundamentals-v3
+.venv/bin/python 03basic_workflow.py
+```
+
+Opens the Agent Framework DevUI at **http://localhost:8093**. Click **Configure & Run**, fill in `role` = `user` and `contents` with your text, then click **Run Workflow**.
+
+## 🎭 Playwright MCP (browser automation for VS Code Copilot)
+
+The Playwright MCP server lets VS Code Copilot control a browser — navigate pages, click elements, fill forms, and read page content.
+
+### Setup
+
+From the workspace root:
+
+```bash
+chmod +x bootstrap_playwright.sh
+./bootstrap_playwright.sh
+```
+
+This installs:
+- `@playwright/test` (npm dependency to avoid npx warnings)
+- Bundled Chromium via `npx playwright install chromium` (no sudo, no system changes — stored in `~/Library/Caches/ms-playwright/`)
+- Chromium for `@playwright/mcp` (may use a different Playwright version)
+
+### VS Code configuration
+
+The MCP server is configured in `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--browser", "chromium"]
+    }
+  }
+}
+```
+
+### What Copilot can do with Playwright
+
+- Navigate to URLs (e.g., open the DevUI at localhost)
+- Read page snapshots (accessibility tree) to understand UI state
+- Click buttons, fill forms, select dropdowns
+- Type text, press keys, handle dialogs
+- Take screenshots
+- Manage browser tabs
+

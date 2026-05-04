@@ -6,3 +6,5 @@
 **/01-foundamentals/
 
 **/node_modules/
+
+**/.playwright-mcp/

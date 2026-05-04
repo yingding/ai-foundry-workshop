@@ -4,13 +4,16 @@
 
 set -e
 
-echo "Installing Playwright Chrome browser for MCP server..."
+echo "Installing Playwright Chromium browser for MCP server..."
 
 # Install @playwright/test locally (avoids the npx warning)
 npm install --no-save @playwright/test
 
-# Install Chrome browser (--with-deps requires sudo for system libs)
-npx playwright install --with-deps chrome
+# Install bundled Chromium (no sudo needed, no system changes)
+npx playwright install chromium
+
+# Install Chromium for @playwright/mcp (may use a different version)
+npx @playwright/mcp install-browser chromium
 
 echo ""
-echo "Done! Playwright Chrome is ready for the MCP server."
+echo "Done! Playwright Chromium is ready for the MCP server."

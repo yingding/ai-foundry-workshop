@@ -1,5 +1,23 @@
 # pip install agent-framework --pre
 # Use `az login` to authenticate with Azure CLI
+#
+# Prerequisites:
+#   1. Copy .env.example to .env and fill in your Azure credentials
+#   2. Run from the 01-foundamentals-v3/ directory:
+#        cd 01-foundamentals-v3
+#        .venv/bin/python 03basic_workflow.py
+#   3. Opens Agent Framework DevUI at http://localhost:8093
+#   4. Click "Configure & Run", set role=user, paste your text in contents,
+#      then click "Run Workflow"
+#
+# Note on .env resolution:
+#   utils/model_client.py resolves .env relative to its own file location
+#   (parent of utils/), so the script works from any working directory.
+#
+# Note on response_format:
+#   BaseChatClient.as_agent() does not accept response_format directly.
+#   Use default_options={"response_format": MyModel} instead — response_format
+#   is a ChatOptions key, not an as_agent() parameter.
 """
 Docstring for maf.03basic_workflow
 
