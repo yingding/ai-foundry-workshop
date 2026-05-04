@@ -5,6 +5,10 @@ azure-ai-projects==2.1.0
 azure-mgmt-cognitiveservices==14.1.0
 # resolve sub_id / resource_group from the Foundry account name via ARG
 azure-mgmt-resourcegraph==8.0.0
+# grant RBAC roles to project MI for cloud evaluation
+azure-mgmt-authorization==4.0.0
+# check/update storage account network settings for eval
+azure-mgmt-storage==24.0.1
 # ping the azure-ai-agents GA version, not the 1.1.0b1
 # bing grounding doesn't show up in the agent knowledge UI
 # deep research tool works only with 1.1.0b3 not 1.1.0b4

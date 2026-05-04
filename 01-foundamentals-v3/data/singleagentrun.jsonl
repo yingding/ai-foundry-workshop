@@ -1,0 +1,1 @@
+{"query": "Can you email me weather info for Seattle ? My email is user@microsoft.com.", "response": "I have sent you an email with the current weather information for Seattle. It is rainy and 14\u00b0C there. If you need any more information, feel free to ask!", "ground_truth": "yes, I mailed you the weather info for Seattle"}
