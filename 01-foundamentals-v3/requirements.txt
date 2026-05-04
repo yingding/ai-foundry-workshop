@@ -18,6 +18,14 @@ azure-ai-evaluation==1.16.6
 
 # agent-framework==1.0.0b251120
 agent-framework==1.2.2
+# FoundryChatClient for pro-code workflows (Approach B in notebook 03)
+agent-framework-foundry==1.2.2
+agent-framework-core==1.2.2
+agent-framework-devui==1.0.0b260429
+# fastapi==0.136.1
+# uvicorn==0.46.0
+fastapi==0.133.0
+uvicorn==0.41.0
 
 # eval dependencies on promptflow-devkit on pillow < 11.1.0
 pillow==11.3.0

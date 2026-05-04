@@ -7,12 +7,16 @@ dependencies = []
 [dependency-groups]
 dev = [
     "agent-framework==1.2.2",
+    "agent-framework-core==1.2.2",
+    "agent-framework-devui==1.0.0b260429",
+    "agent-framework-foundry==1.2.2",
     "azure-ai-evaluation==1.16.6",
     "azure-ai-projects==2.1.0",
     "azure-identity==1.25.3",
     "azure-mgmt-cognitiveservices==14.1.0",
     "azure-mgmt-resourcegraph==8.0.0",
     "azure-monitor-opentelemetry==1.8.7",
+    "fastapi==0.133.0",
     "gradio==6.14.0",
     "ipykernel==7.2.0",
     "ipywidgets==8.1.8",
@@ -23,4 +27,5 @@ dev = [
     "pydantic==2.13.3",
     "pydantic-settings==2.14.0",
     "python-dotenv==1.2.2",
+    "uvicorn==0.41.0",
 ]
