@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # project_api_version: str = Field(..., env="PROJECT_API_VERSION")
     azure_search_connection_name: str = Field(..., env="AZURE_SEARCH_CONNECTION_NAME")
     azure_search_index_name: str = Field(..., env="AZURE_SEARCH_INDEX_NAME")
+    with_logging: bool = Field(True, env="WITH_LOGGING")
 
     # enable_telemetry: bool = Field(True, env="ENABLE_TELEMETRY")
     # azure_monitor_connection_string: Optional[str] = Field(None, env="AZURE_MONITOR_CONNECTION_STRING")
