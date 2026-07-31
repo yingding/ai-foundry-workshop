@@ -1,0 +1,9 @@
+.venv/
+.env
+config/.env
+.git/
+outputs/
+__pycache__/
+*.pyc
+README.md
+uv.lock

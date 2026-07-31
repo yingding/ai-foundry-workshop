@@ -1,0 +1,3 @@
+{"id":"doc-1","text":"Azure Machine Learning batch endpoints run asynchronous jobs over data assets."}
+{"id":"doc-2","text":"The embedding requests still consume quota from the referenced Foundry deployment."}
+{"id":"doc-3","text":"A dedicated model deployment isolates batch throughput from interactive traffic."}

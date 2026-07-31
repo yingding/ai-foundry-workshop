@@ -1,0 +1,10 @@
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - pip
+  - pip:
+      - azure-identity>=1.25.0,<2.0.0
+      - openai>=2.0.0,<3.0.0
+      - opentelemetry-sdk>=1.40.0,<2.0.0
+      - pydantic-settings>=2.12.0,<3.0.0

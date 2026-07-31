@@ -1,0 +1,38 @@
+[project]
+name = "aml-batch-embeddings-foundry-new"
+version = "0.1.0"
+description = "Azure ML batch endpoint with selectable small and large embedding deployments in Foundry new"
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "azure-ai-ml>=1.32.0,<2.0.0",
+    "azure-identity>=1.25.0,<2.0.0",
+    "azure-mgmt-authorization>=4.0.0,<5.0.0",
+    "azure-mgmt-cognitiveservices>=14.1.0,<15.0.0",
+    "azure-mgmt-network>=30.2.0,<31.0.0",
+    "azure-mgmt-storage>=25.0.0,<26.0.0",
+    "azure-storage-blob>=12.29.0,<13.0.0",
+    "openai>=2.0.0,<3.0.0",
+    "opentelemetry-sdk>=1.40.0,<2.0.0",
+    "pydantic-settings>=2.12.0,<3.0.0",
+    "python-dotenv>=1.2.0,<2.0.0",
+    "requests>=2.32.0,<3.0.0",
+]
+
+[project.scripts]
+aml-batch-embeddings = "batch_embeddings:main"
+setup-embedding-permissions = "setup_permissions:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "batch_embeddings.py",
+    "network_setup.py",
+    "permissions_setup.py",
+    "setup_permissions.py",
+    "component/**",
+    "utils/**",
+]

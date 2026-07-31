@@ -8,3 +8,8 @@
 **/node_modules/
 
 **/.playwright-mcp/
+
+# ignore config/*.env to avoid accidentally committing env files with secrets, but allow config/ if there are non-env files that need to be committed
+*.env
+
+**/05-deprecated-embedding/
