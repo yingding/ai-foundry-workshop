@@ -1,3 +1,100 @@
-{"id":"doc-1","text":"Azure Machine Learning batch endpoints run asynchronous jobs over data assets."}
-{"id":"doc-2","text":"The embedding requests still consume quota from the referenced Foundry deployment."}
-{"id":"doc-3","text":"A dedicated model deployment isolates batch throughput from interactive traffic."}
+{"input_id":"chunk-001","input":"Azure Machine Learning batch endpoints run asynchronous jobs over data assets.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-002","input":"The embedding requests consume quota from the referenced Foundry deployment.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-003","input":"A dedicated deployment isolates batch throughput from interactive traffic.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-004","input":"Packing multiple texts into one embedding request reduces requests per minute.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-005","input":"Token usage remains approximately the same when the same texts are embedded.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-006","input":"Input identifiers preserve correlation after compatible requests are packed.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-007","input":"OpenAI response indexes map each embedding to its position in the packed array.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-008","input":"The AML parent job name identifies the complete asynchronous batch run.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-009","input":"Managed identity authenticates the compute job to the Foundry endpoint.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-010","input":"Trace output records packing mode, online request count, and input count.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-011","input":"Requests with different dimensions or encoding formats are never combined.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-012","input":"A configurable input cap limits the failure scope of each online request.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-013","input":"Sample embedding input 013 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-014","input":"Sample embedding input 014 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-015","input":"Sample embedding input 015 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-016","input":"Sample embedding input 016 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-017","input":"Sample embedding input 017 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-018","input":"Sample embedding input 018 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-019","input":"Sample embedding input 019 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-020","input":"Sample embedding input 020 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-021","input":"Sample embedding input 021 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-022","input":"Sample embedding input 022 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-023","input":"Sample embedding input 023 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-024","input":"Sample embedding input 024 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-025","input":"Sample embedding input 025 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-026","input":"Sample embedding input 026 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-027","input":"Sample embedding input 027 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-028","input":"Sample embedding input 028 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-029","input":"Sample embedding input 029 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-030","input":"Sample embedding input 030 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-031","input":"Sample embedding input 031 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-032","input":"Sample embedding input 032 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-033","input":"Sample embedding input 033 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-034","input":"Sample embedding input 034 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-035","input":"Sample embedding input 035 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-036","input":"Sample embedding input 036 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-037","input":"Sample embedding input 037 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-038","input":"Sample embedding input 038 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-039","input":"Sample embedding input 039 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-040","input":"Sample embedding input 040 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-041","input":"Sample embedding input 041 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-042","input":"Sample embedding input 042 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-043","input":"Sample embedding input 043 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-044","input":"Sample embedding input 044 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-045","input":"Sample embedding input 045 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-046","input":"Sample embedding input 046 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-047","input":"Sample embedding input 047 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-048","input":"Sample embedding input 048 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-049","input":"Sample embedding input 049 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-050","input":"Sample embedding input 050 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-051","input":"Sample embedding input 051 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-052","input":"Sample embedding input 052 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-053","input":"Sample embedding input 053 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-054","input":"Sample embedding input 054 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-055","input":"Sample embedding input 055 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-056","input":"Sample embedding input 056 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-057","input":"Sample embedding input 057 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-058","input":"Sample embedding input 058 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-059","input":"Sample embedding input 059 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-060","input":"Sample embedding input 060 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-061","input":"Sample embedding input 061 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-062","input":"Sample embedding input 062 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-063","input":"Sample embedding input 063 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-064","input":"Sample embedding input 064 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-065","input":"Sample embedding input 065 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-066","input":"Sample embedding input 066 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-067","input":"Sample embedding input 067 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-068","input":"Sample embedding input 068 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-069","input":"Sample embedding input 069 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-070","input":"Sample embedding input 070 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-071","input":"Sample embedding input 071 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-072","input":"Sample embedding input 072 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-073","input":"Sample embedding input 073 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-074","input":"Sample embedding input 074 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-075","input":"Sample embedding input 075 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-076","input":"Sample embedding input 076 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-077","input":"Sample embedding input 077 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-078","input":"Sample embedding input 078 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-079","input":"Sample embedding input 079 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-080","input":"Sample embedding input 080 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-081","input":"Sample embedding input 081 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-082","input":"Sample embedding input 082 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-083","input":"Sample embedding input 083 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-084","input":"Sample embedding input 084 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-085","input":"Sample embedding input 085 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-086","input":"Sample embedding input 086 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-087","input":"Sample embedding input 087 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-088","input":"Sample embedding input 088 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-089","input":"Sample embedding input 089 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-090","input":"Sample embedding input 090 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-091","input":"Sample embedding input 091 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-092","input":"Sample embedding input 092 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-093","input":"Sample embedding input 093 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-094","input":"Sample embedding input 094 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-095","input":"Sample embedding input 095 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-096","input":"Sample embedding input 096 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-097","input":"Sample embedding input 097 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-098","input":"Sample embedding input 098 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-099","input":"Sample embedding input 099 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}
+{"input_id":"chunk-100","input":"Sample embedding input 100 demonstrates compatible request packing.","model":"text-embedding-3-small","encoding_format":"float"}

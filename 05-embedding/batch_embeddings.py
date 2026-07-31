@@ -1,8 +1,11 @@
 import argparse
+import json
 import os
 import re
 import shutil
 import tempfile
+from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 
 from azure.ai.ml import Input, Output, MLClient, command, dsl
@@ -30,6 +33,7 @@ from permissions_setup import configure_permissions
 from utils.fdyauth import AuthHelper
 
 ROOT = Path(__file__).resolve().parent
+MODEL_KEYS = ("small", "large", "ada")
 
 
 def required(name: str) -> str:
@@ -49,6 +53,7 @@ class Settings:
         self.batch_deployments = {
             "small": required("AML_SMALL_DEPLOYMENT_NAME"),
             "large": required("AML_LARGE_DEPLOYMENT_NAME"),
+            "ada": os.getenv("AML_ADA_DEPLOYMENT_NAME", "embedding-ada-v1"),
         }
         self.foundry_resource_group = required("FOUNDRY_RESOURCE_GROUP")
         self.foundry_account = required("FOUNDRY_ACCOUNT_NAME")
@@ -58,12 +63,21 @@ class Settings:
         self.openai_deployments = {
             "small": required("AZURE_OPENAI_SMALL_DEPLOYMENT"),
             "large": required("AZURE_OPENAI_LARGE_DEPLOYMENT"),
+            "ada": os.getenv(
+                "AZURE_OPENAI_ADA_DEPLOYMENT", "text-embedding-ada-002-test"
+            ),
         }
         self.openai_models = {
             "small": required("AZURE_OPENAI_SMALL_MODEL"),
             "large": required("AZURE_OPENAI_LARGE_MODEL"),
+            "ada": os.getenv("AZURE_OPENAI_ADA_MODEL", "text-embedding-ada-002"),
         }
-        self.openai_model_version = required("AZURE_OPENAI_MODEL_VERSION")
+        embedding_3_version = required("AZURE_OPENAI_MODEL_VERSION")
+        self.openai_model_versions = {
+            "small": embedding_3_version,
+            "large": embedding_3_version,
+            "ada": os.getenv("AZURE_OPENAI_ADA_MODEL_VERSION", "2"),
+        }
         self.openai_sku = required("AZURE_OPENAI_SKU")
         self.openai_capacity = int(required("AZURE_OPENAI_CAPACITY"))
 
@@ -92,10 +106,10 @@ def print_plan(settings: Settings) -> None:
     print("Foundry new project:")
     print(f"  account:    {settings.foundry_account}")
     print(f"  project:    {settings.foundry_project}")
-    for model_key in ("small", "large"):
+    for model_key in MODEL_KEYS:
         print(
             f"  {model_key}:      {settings.openai_deployments[model_key]} "
-            f"({settings.openai_models[model_key]}:{settings.openai_model_version})"
+            f"({settings.openai_models[model_key]}:{settings.openai_model_versions[model_key]})"
         )
     print("Shared AML batch endpoint:")
     print(f"  workspace:  {settings.aml_workspace}")
@@ -111,6 +125,7 @@ def ensure_model_deployment(
 ) -> None:
     deployment_name = settings.openai_deployments[model_key]
     model_name = settings.openai_models[model_key]
+    model_version = settings.openai_model_versions[model_key]
     try:
         existing = cognitive_client.deployments.get(
             settings.foundry_resource_group,
@@ -133,7 +148,7 @@ def ensure_model_deployment(
             model=DeploymentModel(
                 format="OpenAI",
                 name=model_name,
-                version=settings.openai_model_version,
+                version=model_version,
             ),
             version_upgrade_option="NoAutoUpgrade",
         ),
@@ -185,19 +200,49 @@ def create_pipeline_component(
             "PYTHONPATH=. python component/embed.py --input-dir ${{inputs.documents}} "
             "--output-dir ${{outputs.embeddings}} "
             f"--endpoint {settings.openai_endpoint} "
-            f"--deployment {settings.openai_deployments[model_key]}"
+            f"--deployment {settings.openai_deployments[model_key]} "
+            f"--model {settings.openai_models[model_key]} "
+            "--packing ${{inputs.packing}} "
+            "--max-inputs-per-request ${{inputs.max_inputs_per_request}} "
+            "--max-retries ${{inputs.max_retries}} "
+            "--request-concurrency ${{inputs.request_concurrency}}"
         ),
-        inputs={"documents": Input(type=AssetTypes.URI_FOLDER)},
+        inputs={
+            "documents": Input(type=AssetTypes.URI_FOLDER),
+            "packing": Input(type="string", default="batch"),
+            "max_inputs_per_request": Input(type="integer", default=128),
+            "max_retries": Input(type="integer", default=8),
+            "request_concurrency": Input(type="integer", default=1),
+        },
         outputs={"embeddings": Output(type=AssetTypes.URI_FOLDER)},
         environment=environment,
+        is_deterministic=False,
     )
 
     @dsl.pipeline(name=f"batch_embedding_pipeline_{model_key}")
-    def pipeline(documents: Input):
-        step = embed(documents=documents)
+    def pipeline(
+        documents: Input,
+        packing: str = "batch",
+        max_inputs_per_request: int = 128,
+        max_retries: int = 8,
+        request_concurrency: int = 1,
+    ):
+        step = embed(
+            documents=documents,
+            packing=packing,
+            max_inputs_per_request=max_inputs_per_request,
+            max_retries=max_retries,
+            request_concurrency=request_concurrency,
+        )
         return {"embeddings": step.outputs.embeddings}
 
-    return pipeline(documents=Input(type=AssetTypes.URI_FOLDER)).component
+    return pipeline(
+        documents=Input(type=AssetTypes.URI_FOLDER),
+        packing="batch",
+        max_inputs_per_request=128,
+        max_retries=8,
+        request_concurrency=1,
+    ).component
 
 
 def ensure_batch_endpoint(settings: Settings, ml_client: MLClient) -> None:
@@ -214,7 +259,7 @@ def ensure_batch_endpoint(settings: Settings, ml_client: MLClient) -> None:
                 description="Selectable small/large OpenAI embeddings from Foundry new",
             )
         ).result()
-        for model_key in ("small", "large"):
+        for model_key in MODEL_KEYS:
             component = ml_client.components.create_or_update(
                 create_pipeline_component(settings, model_key=model_key, code_path=stage)
             )
@@ -240,7 +285,7 @@ def ensure_batch_endpoint(settings: Settings, ml_client: MLClient) -> None:
 
 def provision(settings: Settings) -> None:
     ml_client, cognitive_client, authorization_client = clients(settings)
-    for model_key in ("small", "large"):
+    for model_key in MODEL_KEYS:
         ensure_model_deployment(settings, cognitive_client, model_key)
     ensure_compute(settings, ml_client)
     configure_permissions(settings, ml_client, authorization_client)
@@ -269,6 +314,8 @@ def monitor(settings: Settings, job_name: str) -> None:
     ml_client, _, _ = clients(settings)
     job = ml_client.jobs.get(job_name)
     print(f"Job {job.name}: {job.status}")
+    if job.experiment_name:
+        print(f"  run label: {job.experiment_name}")
     children = list(ml_client.jobs.list(parent_job_name=job_name))
     for child in children:
         print(f"  child {child.name} ({child.display_name}): {child.status}")
@@ -281,6 +328,130 @@ def monitor(settings: Settings, job_name: str) -> None:
             if child.status == "Failed":
                 print_failure_trace(ml_client, child.name)
         raise RuntimeError(f"AML batch job {job_name} failed") from error
+    print_output_summary(ml_client, job_name)
+
+
+def print_output_summary(ml_client: MLClient, job_name: str) -> None:
+    with tempfile.TemporaryDirectory(prefix="aml-embedding-summary-") as temp_dir:
+        destination = Path(temp_dir)
+        ml_client.jobs.download(
+            name=job_name,
+            output_name="embeddings",
+            download_path=destination,
+        )
+        output_dir = destination / "named-outputs" / "embeddings"
+        results_path = output_dir / "embeddings.jsonl"
+        trace_path = output_dir / "trace.jsonl"
+        if not results_path.exists() or not trace_path.exists():
+            print("Output summary unavailable; download the named output for details.")
+            return
+
+        results = [json.loads(line) for line in results_path.read_text().splitlines()]
+        errors = [result for result in results if "error" in result]
+        spans = [json.loads(line) for line in trace_path.read_text().splitlines()]
+        batch_span = next((span for span in spans if span["name"] == "batch.embed"), None)
+        if not batch_span:
+            print("Output summary unavailable; batch trace span was not found.")
+            return
+
+        attributes = batch_span["attributes"]
+        request_spans = [span for span in spans if span["name"] == "embeddings.create"]
+        request_durations = sorted(
+            span["attributes"]["request.duration_ms"]
+            for span in request_spans
+            if "request.duration_ms" in span["attributes"]
+        )
+        request_starts = sorted(
+            span["attributes"]["request.start_offset_ms"]
+            for span in request_spans
+            if "request.start_offset_ms" in span["attributes"]
+        )
+        status_counts = Counter(
+            str(span["attributes"]["http.status_code"])
+            for span in request_spans
+            if "http.status_code" in span["attributes"]
+        )
+        retry_delays = sorted(
+            float(span["attributes"]["http.retry_after_ms"])
+            for span in request_spans
+            if "http.retry_after_ms" in span["attributes"]
+        )
+        duration_ms = float(attributes["embedding.duration_ms"])
+        print("Embedding output summary:")
+        print(f"  packing:         {attributes['embedding.packing']}")
+        print(f"  max retries:     {attributes['embedding.max_retries']}")
+        print(f"  concurrency:     {attributes['embedding.request_concurrency']}")
+        print(f"  source lines:    {attributes['embedding.source_line_count']}")
+        print(f"  embedding inputs:{attributes['embedding.input_count']}")
+        print(f"  online requests: {attributes['embedding.online_request_count']}")
+        print(f"  duration ms:     {duration_ms}")
+        print(f"  failed requests: {attributes['embedding.failed_count']}")
+        if request_durations:
+            print(f"  latency p50 ms:  {percentile(request_durations, 50):.3f}")
+            print(f"  latency p95 ms:  {percentile(request_durations, 95):.3f}")
+            print(f"  latency p99 ms:  {percentile(request_durations, 99):.3f}")
+        if duration_ms > 0:
+            print(
+                f"  logical req/s:   "
+                f"{len(request_spans) / (duration_ms / 1000):.3f}"
+            )
+        if request_starts:
+            print(f"  start spread ms: {request_starts[-1] - request_starts[0]:.3f}")
+            print(f"  peak starts/10s: {peak_window_count(request_starts, 10_000)}")
+        if status_counts:
+            formatted_statuses = ", ".join(
+                f"{status}={count}" for status, count in sorted(status_counts.items())
+            )
+            print(f"  HTTP statuses:   {formatted_statuses}")
+        if retry_delays:
+            print(f"  retry-after ms:  min={min(retry_delays):.0f}, max={max(retry_delays):.0f}")
+        for header_name in (
+            "x-ratelimit-limit-requests",
+            "x-ratelimit-remaining-requests",
+            "x-ratelimit-reset-requests",
+            "x-ratelimit-limit-tokens",
+            "x-ratelimit-remaining-tokens",
+            "x-ratelimit-reset-tokens",
+        ):
+            values = sorted(
+                {
+                    str(span["attributes"][f"http.{header_name}"])
+                    for span in request_spans
+                    if f"http.{header_name}" in span["attributes"]
+                }
+            )
+            if values:
+                print(f"  {header_name}: {', '.join(values)}")
+        error_counts = Counter(result["error"]["code"] for result in errors)
+        for code, count in sorted(error_counts.items()):
+            print(f"  error count:     {code}={count}")
+        for result in errors[:5]:
+            print(
+                f"  error {result['error']['code']} for input IDs "
+                f"{result.get('input_ids', [])}: {result['error']['message']}"
+            )
+        if len(errors) > 5:
+            print(f"  errors omitted:  {len(errors) - 5}")
+
+
+def percentile(values: list[float], percentile_value: float) -> float:
+    if not values:
+        raise ValueError("percentile requires at least one value")
+    position = (len(values) - 1) * percentile_value / 100
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(values) - 1)
+    fraction = position - lower_index
+    return values[lower_index] + (values[upper_index] - values[lower_index]) * fraction
+
+
+def peak_window_count(start_offsets_ms: list[float], window_ms: float) -> int:
+    peak = 0
+    left = 0
+    for right, start_offset in enumerate(start_offsets_ms):
+        while start_offset - start_offsets_ms[left] >= window_ms:
+            left += 1
+        peak = max(peak, right - left + 1)
+    return peak
 
 
 def print_failure_trace(ml_client: MLClient, child_job_name: str) -> None:
@@ -319,20 +490,108 @@ def print_failure_trace(ml_client: MLClient, child_job_name: str) -> None:
         print("No matching failure trace found; inspect the downloaded artifacts directory.")
 
 
-def invoke(settings: Settings, input_path: Path, model_key: str) -> None:
+def invoke(
+    settings: Settings,
+    input_path: Path,
+    model_key: str,
+    packing: str,
+    max_inputs_per_request: int,
+    max_retries: int,
+    request_concurrency: int,
+    repeat_inputs: int,
+) -> None:
+    if repeat_inputs < 1 or repeat_inputs > 100:
+        raise ValueError("repeat_inputs must be between 1 and 100")
     ml_client, _, _ = clients(settings)
-    job = ml_client.batch_endpoints.invoke(
-        endpoint_name=settings.endpoint_name,
-        deployment_name=settings.batch_deployments[model_key],
-        inputs={
-            "documents": Input(type=AssetTypes.URI_FOLDER, path=str(input_path.resolve()))
-        },
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    run_label = (
+        f"embed-{model_key}-{packing}-x{repeat_inputs}-r{max_retries}-"
+        f"c{request_concurrency}-{timestamp}"
     )
-    print(
-        f"Submitted job: {job.name} "
-        f"({model_key} -> {settings.openai_deployments[model_key]})"
-    )
-    monitor(settings, job.name)
+    with tempfile.TemporaryDirectory(prefix="embedding-load-test-") as temp_dir:
+        upload_path = input_path
+        if repeat_inputs > 1:
+            upload_path = Path(temp_dir) / "input"
+            repeated_count = repeat_jsonl_inputs(
+                input_path,
+                upload_path,
+                repeat_inputs,
+                settings.openai_models[model_key],
+            )
+            print(
+                f"Prepared {repeated_count} load-test records from "
+                f"{repeat_inputs} repetitions"
+            )
+        job = ml_client.batch_endpoints.invoke(
+            endpoint_name=settings.endpoint_name,
+            deployment_name=settings.batch_deployments[model_key],
+            experiment_name=run_label,
+            inputs={
+                "documents": Input(type=AssetTypes.URI_FOLDER, path=str(upload_path.resolve())),
+                "packing": Input(type="string", default=packing),
+                "max_inputs_per_request": Input(
+                    type="integer", default=max_inputs_per_request
+                ),
+                "max_retries": Input(type="integer", default=max_retries),
+                "request_concurrency": Input(
+                    type="integer", default=request_concurrency
+                ),
+            },
+        )
+        print(f"Run label: {run_label}")
+        print(
+            f"Submitted job ID: {job.name} "
+            f"({model_key} -> {settings.openai_deployments[model_key]}, "
+            f"packing={packing}, repeats={repeat_inputs}, max_retries={max_retries}, "
+            f"concurrency={request_concurrency})"
+        )
+        monitor(settings, job.name)
+
+
+def repeat_jsonl_inputs(
+    input_path: Path,
+    output_path: Path,
+    repetitions: int,
+    model: str,
+) -> int:
+    output_path.mkdir(parents=True, exist_ok=True)
+    record_count = 0
+    for source_path in sorted(input_path.rglob("*.jsonl")):
+        destination = output_path / source_path.relative_to(input_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with source_path.open(encoding="utf-8") as source, destination.open(
+            "w", encoding="utf-8"
+        ) as output:
+            for line in source:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                for repetition in range(1, repetitions + 1):
+                    suffix = f"-repeat-{repetition:02d}"
+                    input_id = row.get("input_id")
+                    if isinstance(input_id, str):
+                        repeated_input_id = input_id + suffix
+                    elif isinstance(input_id, list):
+                        repeated_input_id = [value + suffix for value in input_id]
+                    else:
+                        raise ValueError(
+                            f"{source_path}: input_id must be a string or array"
+                        )
+                    output.write(
+                        json.dumps(
+                            {
+                                **row,
+                                "input_id": repeated_input_id,
+                                "model": model,
+                            },
+                            separators=(",", ":"),
+                        )
+                        + "\n"
+                    )
+                    record_count += 1
+    if record_count == 0:
+        raise ValueError(f"No JSONL records found under {input_path}")
+    return record_count
 
 
 def download(settings: Settings, job_name: str, output_path: Path) -> None:
@@ -345,7 +604,16 @@ def download(settings: Settings, job_name: str, output_path: Path) -> None:
     print(f"Downloaded output to {output_path}")
 
 
-def test_local(settings: Settings, input_path: Path, output_path: Path, model_key: str) -> None:
+def test_local(
+    settings: Settings,
+    input_path: Path,
+    output_path: Path,
+    model_key: str,
+    packing: str,
+    max_inputs_per_request: int,
+    max_retries: int,
+    request_concurrency: int,
+) -> None:
     from component.embed import run
 
     run(
@@ -353,7 +621,11 @@ def test_local(settings: Settings, input_path: Path, output_path: Path, model_ke
         output_dir=output_path,
         endpoint=settings.openai_endpoint,
         deployment=settings.openai_deployments[model_key],
-        batch_size=2,
+        model=settings.openai_models[model_key],
+        packing=packing,
+        max_inputs_per_request=max_inputs_per_request,
+        max_retries=max_retries,
+        request_concurrency=request_concurrency,
         dry_run=True,
     )
 
@@ -375,10 +647,21 @@ def main() -> None:
     test_parser = subparsers.add_parser("test", help="Test parsing, outputs, and traces locally")
     test_parser.add_argument("--input", type=Path, default=ROOT / "data")
     test_parser.add_argument("--output", type=Path, default=ROOT / "outputs" / "local-test")
-    test_parser.add_argument("--model", choices=("small", "large"), default="small")
+    test_parser.add_argument("--model", choices=MODEL_KEYS, default="small")
+    test_parser.add_argument("--packing", choices=("none", "batch"), default="batch")
+    test_parser.add_argument("--max-inputs-per-request", type=int, default=128)
+    test_parser.add_argument("--max-retries", type=int, default=8)
+    test_parser.add_argument("--request-concurrency", type=int, default=1)
     invoke_parser = subparsers.add_parser("invoke", help="Submit an AML batch job")
     invoke_parser.add_argument("--input", type=Path, default=ROOT / "data")
-    invoke_parser.add_argument("--model", choices=("small", "large"), required=True)
+    invoke_parser.add_argument("--model", choices=MODEL_KEYS, required=True)
+    invoke_parser.add_argument(
+        "--packing", choices=("none", "batch"), default="batch"
+    )
+    invoke_parser.add_argument("--max-inputs-per-request", type=int, default=128)
+    invoke_parser.add_argument("--max-retries", type=int, default=8)
+    invoke_parser.add_argument("--request-concurrency", type=int, default=1)
+    invoke_parser.add_argument("--repeat-inputs", type=int, default=1)
     monitor_parser = subparsers.add_parser("monitor", help="Stream a queued/running job and show child status")
     monitor_parser.add_argument("job_name")
     download_parser = subparsers.add_parser("download", help="Download a completed job output")
@@ -397,9 +680,27 @@ def main() -> None:
         print_plan(settings)
         provision(settings)
     elif args.command == "test":
-        test_local(settings, args.input, args.output, args.model)
+        test_local(
+            settings,
+            args.input,
+            args.output,
+            args.model,
+            args.packing,
+            args.max_inputs_per_request,
+            args.max_retries,
+            args.request_concurrency,
+        )
     elif args.command == "invoke":
-        invoke(settings, args.input, args.model)
+        invoke(
+            settings,
+            args.input,
+            args.model,
+            args.packing,
+            args.max_inputs_per_request,
+            args.max_retries,
+            args.request_concurrency,
+            args.repeat_inputs,
+        )
     elif args.command == "monitor":
         monitor(settings, args.job_name)
     elif args.command == "download":
