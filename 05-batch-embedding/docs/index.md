@@ -180,7 +180,13 @@ Pacing is optional and defaults to disabled. It is an experiment control for bur
 
 ## Why AML and APIM?
 
-Azure Machine Learning batch endpoints provide asynchronous jobs, storage-backed inputs/outputs, managed compute, run history, and child-job MLflow metrics. See [Batch endpoints](https://learn.microsoft.com/azure/machine-learning/concept-endpoints-batch?view=azureml-api-2).
+Azure Machine Learning batch endpoints provide asynchronous jobs,
+storage-backed inputs/outputs, managed compute, run history, and child-job
+MLflow metrics. Microsoft's [Run Azure OpenAI models in batch endpoints](https://learn.microsoft.com/en-us/azure/machine-learning/how-to-use-batch-model-openai-embeddings?view=azureml-api-2&tabs=cli%2Cad)
+guide demonstrates the official `text-embedding-ada-002` baseline with AML
+compute, Microsoft Entra authentication, invocation, and JSONL output. This
+workshop adds custom packing, optional pacing, metrics, and APIM pooling. See
+also the [batch endpoints overview](https://learn.microsoft.com/azure/machine-learning/concept-endpoints-batch?view=azureml-api-2).
 
 APIM exposes two independently allocated model deployments as one backend pool. APIM does not create quota; it routes across existing capacity.
 

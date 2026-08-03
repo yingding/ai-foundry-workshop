@@ -52,6 +52,7 @@ The `01-foundamentals-*` notebooks showcase Azure AI Foundry capabilities:
 
 
 ## Useful References
+* Run Azure OpenAI models in Azure Machine Learning batch endpoints: https://learn.microsoft.com/en-us/azure/machine-learning/how-to-use-batch-model-openai-embeddings?view=azureml-api-2&tabs=cli%2Cad
 * Components of the Foundry Agent Service: https://blog.langchain.com/context-engineering-for-agents/
 * Connected Agents to isolate context: https://learn.microsoft.com/en-us/azure/ai-foundry/agents/how-to/connected-agents?pivots=python
 * Context Engineering for Agents: https://blog.langchain.com/context-engineering-for-agents/

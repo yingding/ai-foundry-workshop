@@ -49,6 +49,13 @@ deployments on one Azure Machine Learning batch endpoint. Direct
 `text-embedding-ada-002` (ADA Embedding Model) and APIM-pooled ADA Embedding
 Model routes remain separate for A/B testing and rollback.
 
+Microsoft's [Azure OpenAI models in AML batch endpoints](https://learn.microsoft.com/en-us/azure/machine-learning/how-to-use-batch-model-openai-embeddings?view=azureml-api-2&tabs=cli%2Cad)
+guide provides the official baseline for deploying `text-embedding-ada-002`,
+using AML compute and Microsoft Entra authentication, invoking a batch endpoint,
+and downloading JSONL results. This project extends that baseline with a custom
+pipeline component, input packing, optional pacing, MLflow metrics, and an APIM
+backend pool.
+
 | CLI choice | AML deployment role | Foundry model | Dimensions |
 | --- | --- | --- | --- |
 | `small` | Small-model deployment | `text-embedding-3-small` | 1,536 |

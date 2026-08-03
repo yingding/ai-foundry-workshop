@@ -111,6 +111,7 @@ Require:
 
 Microsoft references:
 
+- [Run Azure OpenAI models in AML batch endpoints](https://learn.microsoft.com/en-us/azure/machine-learning/how-to-use-batch-model-openai-embeddings?view=azureml-api-2&tabs=cli%2Cad)
 - [Create jobs and input data for batch endpoints](https://learn.microsoft.com/azure/machine-learning/how-to-access-data-batch-endpoints-jobs?view=azureml-api-2#create-basic-jobs)
 - [Log and view MLflow metrics](https://learn.microsoft.com/azure/machine-learning/how-to-log-view-metrics?view=azureml-api-2)
 
