@@ -4,6 +4,11 @@ This plan improves throughput through the online embeddings endpoint by batching
 multiple embedding inputs into each HTTP request. The objective is to reduce RPM
 consumption while using more of the deployment's assigned TPM.
 
+The implementation lives in `utils/embedding_optimization.py` as
+`pack_compatible_requests`. Both the AML embedding component and the APIM RPM
+experiment call this function, so direct and pooled routes use the same grouping
+and chunking rules.
+
 See [TPM optimization plan](tpm-optimization.md) when measured demand exceeds
 the token capacity assigned to the deployment.
 
@@ -13,7 +18,8 @@ token-aware batching unless those capabilities are added later.
 ## Measured baseline
 
 The `text-embedding-ada-002-test` deployment has 15,000 assigned TPM. A live
-scalar test sent 1,200 HTTP requests with 100 workers and SDK retries disabled:
+one-input-per-request test sent 1,200 HTTP requests with 100 workers and SDK
+retries disabled:
 
 - 870 requests returned HTTP 200.
 - 330 requests returned HTTP 429 `RateLimitReached`.
@@ -29,7 +35,8 @@ accounting.
 ## 1. Batch by default
 
 Use `--packing batch` for normal batch-endpoint invocations. Use
-`--packing none` only for diagnostics and controlled rate-limit tests.
+`--packing none` means one input per HTTP request and is used only for
+diagnostics and controlled rate-limit tests.
 
 Batch mode combines inputs only when their request settings match:
 
@@ -148,7 +155,7 @@ consumption.
 | HTTP 429 rate | Detects overdriving | Below 1% |
 | Retry delay | Quantifies throttling cost | Zero during the steady-state test |
 | Request latency p50/p95/p99 | Detects oversized batches | Record and compare across batch sizes |
-| End-to-end duration | Measures total batch performance | Lower than scalar mode for the same inputs |
+| End-to-end duration | Measures total batch performance | Lower than one-input-per-request mode for the same inputs |
 
 Calculate TPM utilization as:
 
@@ -164,13 +171,28 @@ $$
 
 ## Validation sequence
 
-1. Establish a scalar control with `--packing none` and retries disabled.
+1. Establish a one-input-per-request control with `--packing none` and retries disabled.
 2. Run `--packing batch` over the same inputs and compare IDs and outputs.
 3. Test token targets around 800, 1,000, 1,200, and 1,500 tokens per request.
 4. Pace each candidate at 70%, 80%, and 90% of assigned TPM.
 5. Repeat each setting across several clean minute windows.
 6. Select the highest-throughput setting that keeps HTTP 429 below 1% and does
    not materially degrade p95 latency.
+
+Run the focused APIM RPM packing experiment with:
+
+```bash
+uv run apim-ada-load rpm \
+   --target gateway \
+   --inputs 100 \
+   --batch-size 100 \
+   --output outputs/apim-ada-rpm-gateway
+```
+
+The verified run packed 100 logical inputs into one successful APIM request,
+reporting 100 inputs per request and a 99% request reduction with no HTTP 429.
+This proves request reduction, not token reduction: the packed request still
+consumed the tokens for all 100 inputs.
 
 The selected operating point must come from repeated measurements. The current
 100-input and 1,200-token values are baseline candidates derived from this

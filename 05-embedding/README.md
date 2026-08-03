@@ -1,15 +1,18 @@
 # Foundry batch embeddings
 
-This sample exposes three Microsoft Foundry embedding models through one Azure Machine Learning batch endpoint.
+This sample exposes three Microsoft Foundry embedding models through four
+deployments on one Azure Machine Learning batch endpoint. Direct ADA and
+APIM-pooled ADA remain separate for A/B testing and rollback.
 
 | CLI choice | AML deployment role | Foundry model | Dimensions |
 | --- | --- | --- | --- |
 | `small` | Small-model deployment | `text-embedding-3-small` | 1,536 |
 | `large` | Large-model deployment | `text-embedding-3-large` | 3,072 |
 | `ada` | ADA deployment | `text-embedding-ada-002` | 1,536 |
+| `ada-apim` | ADA through APIM regional pool | `text-embedding-ada-002` | 1,536 |
 
-Select the model per invocation with `--model small`, `--model large`, or
-`--model ada`.
+Select the model per invocation with `--model small`, `--model large`,
+`--model ada`, or `--model ada-apim`.
 
 ## Input and output format
 
@@ -47,6 +50,16 @@ utilization.
 See [TPM optimization plan](docs/tpm-optimization.md) for the escalation from
 deployment allocation through quota requests, independent regional capacity,
 and APIM routing.
+See [Identity and RBAC concept](docs/rbac-concept.md) for the AML compute,
+workspace, APIM, Foundry, and Storage identity and role-assignment model.
+See [APIM ADA proof of concept](docs/apim-ada-poc.md) for provisioning, smoke
+testing, paced load steps, metrics, and acceptance criteria.
+
+`utils/embedding_optimization.py` is the shared optimization layer. The AML
+component uses `pack_compatible_requests` to reduce HTTP requests per logical
+input. The local APIM experiments use the same packer for RPM tests and use
+`pacing_interval_seconds` plus `tokens_per_minute` for TPM tests. Direct ADA and
+APIM-pooled ADA therefore apply the same request-packing behavior.
 
 RPM and TPM are dependent only when quota is allocated: each model capacity
 unit supplies a predefined RPM/TPM pair, so they cannot be configured
@@ -75,7 +88,7 @@ uv run aml-batch-embeddings test \
 
 Both runs process the same 100 IDs. In the live test, the unoptimized output had 100 response records and the optimized output had one response record containing 100 `data` items. All 100 inputs succeeded in both modes. The embedding loop took 35,259 ms without packing and 4,713 ms with packing. Trace attributes report `embedding.source_line_count`, `embedding.input_count`, and `embedding.online_request_count`.
 
-Disabling retries and sending the 100 scalar requests with 20 workers still did
+Disabling retries and sending 100 one-input-per-request calls with 20 workers still did
 not produce a 429: all 100 completed in 3,275 ms. The packed control completed
 as one request in 4,258 ms. This proves the 100-record fixture is useful for
 showing request reduction, but it is below the expected 166.67 requests per
@@ -87,7 +100,7 @@ The live 1,200-input test produced 996 successes and 204 Foundry
 seconds, and the original `openai.RateLimitError` failed the AML job. A packed
 control placed the same 1,200 inputs in one HTTP request, but Foundry also
 rejected it with `RateLimitReached` and a 60-second retry instruction while the
-endpoint was still recovering from the scalar burst. Therefore that packed run
+endpoint was still recovering from the one-input-per-request burst. Therefore that packed run
 does not isolate whether array items affect call-rate accounting. Packing
 unambiguously reduces client HTTP requests; a clean packed comparison must run
 after the endpoint's rolling throttle state has fully cleared.
@@ -97,7 +110,7 @@ after the endpoint's rolling throttle state has fully cleared.
 Measured on 2026-07-31 against `text-embedding-3-small`, with SDK retries
 disabled:
 
-| Metric | 1,200 scalar inputs | 1,200 packed inputs |
+| Metric | 1,200 one-input-per-request calls | 1,200 packed inputs |
 | --- | ---: | ---: |
 | HTTP embedding requests | 1,200 | 1 |
 | Request concurrency | 100 | 1 |
@@ -111,7 +124,7 @@ disabled:
 | Foundry retry instruction | 30 seconds | 60 seconds |
 | AML outcome | Failed with endpoint 429 | Failed with endpoint 429 |
 
-A smaller boundary test sent 200 scalar requests with 100 workers and no SDK
+A smaller boundary test sent 200 one-input-per-request calls with 100 workers and no SDK
 retries. All 200 request starts occurred within 2,226 ms, all returned HTTP 200,
 and the component finished in 7,822 ms. This exceeded the nominal 166.67
 requests per 10-second pacing calculation without throttling. The formula is
@@ -121,7 +134,7 @@ cutoff; Foundry applies service-controlled burst capacity and evaluation state.
 ### Measured ADA rate limit
 
 The ADA deployment `text-embedding-ada-002-test` has capacity 15, or 15,000
-assigned TPM. It accepted 400 scalar requests whose starts fit inside 9.588
+assigned TPM. It accepted 400 one-input-per-request calls whose starts fit inside 9.588
 seconds. A 1,200-request run with 100 workers and SDK retries disabled returned
 870 HTTP 200 responses and 330 HTTP 429 responses. Throttling began around
 submission sequence 814; all sequences 0-799 succeeded, and no sequence 1000 or
@@ -156,9 +169,15 @@ counter can return HTTP 429, and the endpoint error text does not identify the
 counter precisely.
 
 Use `--request-concurrency` only for controlled load testing. Normal invocations
-default to one worker. Each invocation prints a readable UTC run label such as
-`embed-small-none-r0-c20-20260731-151530`; AML still assigns its own immutable
-`pipelinejob-...` job ID.
+default to one worker. Comparable runs use a stable experiment name such as
+`embeddings-ada-apim-packed-input-array`. Each invocation also requests a
+detailed job name such as
+`embeddings-ada-apim-packed-input-array-records-200-items-128-tokens-1200-retries-0-workers-1-2026-08-03-131500z`.
+AML can still display its generated immutable `pipelinejob-...` identifier.
+
+The CLI retains `--packing none` and `--packing batch` for compatibility. Their
+explicit meanings are **one input per HTTP request** and **packed input array**,
+respectively.
 
 Batching is deterministic and groups only requests with identical `model`, `dimensions`, `encoding_format`, and `user` values. It does not semantically shuffle or cluster text. `--max-inputs-per-request` controls the maximum batched array size and defaults to 128; the service limit is 2,048. Each text and each combined request must still fit the embedding model's token limits. The deployed AML component uses batch mode and disables pipeline output reuse so each submitted job calls Foundry.
 
@@ -169,9 +188,13 @@ Batching is deterministic and groups only requests with identical `model`, `dime
 input folder -> AML batch endpoint
                          +-> large AML deployment -> text-embedding-3-large
                          +-> ada AML deployment   -> text-embedding-ada-002
+                         +-> ada-apim deployment  -> APIM pool -> two ADA v2 backends
 ```
 
-An AML batch endpoint can contain multiple deployments. The Python SDK selects one with `batch_endpoints.invoke(..., deployment_name=...)`. Three deployments provide an explicit model selector while sharing the endpoint, compute, input contract, monitoring, and output format.
+An AML batch endpoint can contain multiple deployments. The Python SDK selects
+one with `batch_endpoints.invoke(..., deployment_name=...)`. Four deployments
+provide an explicit model and route selector while sharing the endpoint,
+compute, input contract, monitoring, and output format.
 
 Resource names, subscription identifiers, regions, and endpoints are supplied through the ignored `config/.env` file. Local uploads use additive NSP/storage firewall access; AML compute uses workspace-managed Blob/File private endpoints. Existing NSP and storage rules remain intact.
 
@@ -194,7 +217,7 @@ uv run aml-batch-embeddings network --cidr-prefix 24
 
 This SDK-only command verifies managed private endpoints, reuses the existing NSP/profile, adds only missing access, preserves prior rules and association mode, and smoke-tests Blob access.
 
-## Provision one endpoint with three deployments
+## Provision one endpoint with four deployments
 
 Set and verify runtime permissions independently:
 
@@ -221,7 +244,17 @@ The caller running this command must already be allowed to create role assignmen
 uv run aml-batch-embeddings provision
 ```
 
-The command validates the existing Foundry deployments, grants the AML compute identity access to Foundry and workspace Blob storage, and creates all three AML batch deployments. The small deployment is the endpoint default, but invocation always supports explicit selection.
+The command validates the existing Foundry deployments, grants the AML compute
+identity access to Foundry and workspace Blob storage, and creates all four AML
+batch deployments. The small deployment is the endpoint default, but invocation
+always supports explicit selection.
+
+Provision only the parallel APIM-pooled ADA deployment without updating the
+existing direct deployments or endpoint default:
+
+```bash
+uv run aml-batch-embeddings provision-apim
+```
 
 ## Invoke the small model
 
@@ -240,6 +273,17 @@ uv run aml-batch-embeddings invoke --model large --input data
 ```bash
 uv run aml-batch-embeddings invoke --model ada --input data
 ```
+
+## Invoke ADA through the APIM pool
+
+```bash
+uv run aml-batch-embeddings invoke --model ada-apim --input data
+```
+
+The `ada-apim` deployment obtains a token for the Cognitive Services audience
+and sends it to a separate AML-facing APIM API. APIM validates the AML compute
+object ID, then authenticates to either Foundry backend with its own managed
+identity. No APIM subscription key or Foundry key is stored in the AML job.
 
 Each invocation submits an asynchronous parent pipeline job and monitors its child command job.
 

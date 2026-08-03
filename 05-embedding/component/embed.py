@@ -5,6 +5,8 @@ import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Iterable
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,127 @@ from opentelemetry.sdk.trace.export import (
 )
 
 from utils.fdyauth import AuthHelper
+from utils.embedding_optimization import pack_compatible_requests, token_counter_for_model
+
+
+class PackingMode(StrEnum):
+    ONE_INPUT_PER_REQUEST = "none"
+    PACKED_INPUT_ARRAY = "batch"
+
+
+class EncodingFormat(StrEnum):
+    FLOAT = "float"
+    BASE64 = "base64"
+
+
+@dataclass(frozen=True)
+class RequestFields:
+    input_id: str = "input_id"
+    input: str = "input"
+    model: str = "model"
+    dimensions: str = "dimensions"
+    encoding_format: str = "encoding_format"
+    user: str = "user"
+    input_ids: str = "input_ids"
+    texts: str = "texts"
+    body: str = "body"
+    input_count: str = "input_count"
+    estimated_tokens: str = "estimated_tokens"
+
+
+@dataclass(frozen=True)
+class ResponseFields:
+    object: str = "object"
+    data: str = "data"
+    embedding: str = "embedding"
+    index: str = "index"
+    model: str = "model"
+    usage: str = "usage"
+    prompt_tokens: str = "prompt_tokens"
+    total_tokens: str = "total_tokens"
+    error: str = "error"
+    code: str = "code"
+    message: str = "message"
+
+
+@dataclass(frozen=True)
+class TraceContract:
+    service_name: str = "aml-batch-embeddings"
+    root_span: str = "batch.embed"
+    request_span: str = "embeddings.create"
+    deployment: str = "embedding.deployment"
+    model: str = "embedding.model"
+    dry_run: str = "embedding.dry_run"
+    packing: str = "embedding.packing"
+    max_inputs_per_request: str = "embedding.max_inputs_per_request"
+    max_tokens_per_request: str = "embedding.max_tokens_per_request"
+    max_retries: str = "embedding.max_retries"
+    request_concurrency: str = "embedding.request_concurrency"
+    token_scope: str = "embedding.token_scope"
+    source_line_count: str = "embedding.source_line_count"
+    online_request_count: str = "embedding.online_request_count"
+    embedding_input_count: str = "embedding.input_count"
+    failed_count: str = "embedding.failed_count"
+    duration_ms: str = "embedding.duration_ms"
+    request_start_offset_ms: str = "request.start_offset_ms"
+    request_duration_ms: str = "request.duration_ms"
+    batch_number: str = "batch.number"
+    batch_input_count: str = "batch.embedding_input_count"
+    batch_estimated_tokens: str = "batch.estimated_tokens"
+    batch_prompt_tokens: str = "batch.prompt_tokens"
+    http_status_code: str = "http.status_code"
+    http_retry_after_ms: str = "http.retry_after_ms"
+    http_retry_after: str = "http.retry_after"
+
+
+@dataclass(frozen=True)
+class ComponentFiles:
+    embeddings: str = "embeddings.jsonl"
+    trace: str = "trace.jsonl"
+
+
+@dataclass(frozen=True)
+class ComponentLimits:
+    max_array_inputs: int = 2048
+    max_request_tokens: int = 300_000
+    max_batch_inputs: int = 50_000
+    max_request_concurrency: int = 100
+
+
+@dataclass(frozen=True)
+class ComponentDefaults:
+    packing: PackingMode = PackingMode.PACKED_INPUT_ARRAY
+    encoding_format: EncodingFormat = EncodingFormat.FLOAT
+    max_inputs_per_request: int = 128
+    max_tokens_per_request: int = 0
+    max_retries: int = 8
+    request_concurrency: int = 1
+    token_scope: str = "https://ai.azure.com/.default"
+    dry_run_dimensions: int = 2
+    dry_run_base64_embedding: str = "AAAAAA=="
+
+
+@dataclass(frozen=True)
+class RateLimitHeaders:
+    values: tuple[str, ...] = (
+        "x-ratelimit-limit-requests",
+        "x-ratelimit-remaining-requests",
+        "x-ratelimit-reset-requests",
+        "x-ratelimit-limit-tokens",
+        "x-ratelimit-remaining-tokens",
+        "x-ratelimit-reset-tokens",
+    )
+    retry_after_ms: str = "retry-after-ms"
+    retry_after: str = "retry-after"
+
+
+REQUEST = RequestFields()
+RESPONSE = ResponseFields()
+TRACE = TraceContract()
+FILES = ComponentFiles()
+LIMITS = ComponentLimits()
+DEFAULTS = ComponentDefaults()
+RATE_LIMIT = RateLimitHeaders()
 
 
 class JsonLinesSpanExporter(SpanExporter):
@@ -56,10 +179,10 @@ class JsonLinesSpanExporter(SpanExporter):
 
 
 def configure_tracing(output_dir: Path) -> TracerProvider:
-    provider = TracerProvider(resource=Resource.create({"service.name": "aml-batch-embeddings"}))
+    provider = TracerProvider(resource=Resource.create({"service.name": TRACE.service_name}))
     provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter(out=sys.stdout)))
     provider.add_span_processor(
-        SimpleSpanProcessor(JsonLinesSpanExporter(output_dir / "trace.jsonl"))
+        SimpleSpanProcessor(JsonLinesSpanExporter(output_dir / FILES.trace))
     )
     trace.set_tracer_provider(provider)
     return provider
@@ -69,23 +192,23 @@ def validate_request(row: Any, source: str, expected_model: str) -> dict[str, An
     if not isinstance(row, dict):
         raise ValueError(f"{source}: each line must be a JSON object")
     allowed_fields = {
-        "input_id",
-        "input",
-        "model",
-        "dimensions",
-        "encoding_format",
-        "user",
+        REQUEST.input_id,
+        REQUEST.input,
+        REQUEST.model,
+        REQUEST.dimensions,
+        REQUEST.encoding_format,
+        REQUEST.user,
     }
     unknown_fields = sorted(set(row) - allowed_fields)
     if unknown_fields:
         raise ValueError(f"{source}: unsupported fields: {', '.join(unknown_fields)}")
-    if row.get("model") != expected_model:
+    if row.get(REQUEST.model) != expected_model:
         raise ValueError(
             f"{source}: model must match the selected deployment model "
             f"{expected_model!r}"
         )
-    input_value = row.get("input")
-    input_id_value = row.get("input_id")
+    input_value = row.get(REQUEST.input)
+    input_id_value = row.get(REQUEST.input_id)
     if isinstance(input_value, str):
         if not input_value:
             raise ValueError(f"{source}: input must not be empty")
@@ -94,8 +217,11 @@ def validate_request(row: Any, source: str, expected_model: str) -> dict[str, An
         input_ids = [input_id_value]
         texts = [input_value]
     elif isinstance(input_value, list) and input_value:
-        if len(input_value) > 2048:
-            raise ValueError(f"{source}: input must contain at most 2048 texts")
+        if len(input_value) > LIMITS.max_array_inputs:
+            raise ValueError(
+                f"{source}: input must contain at most "
+                f"{LIMITS.max_array_inputs} texts"
+            )
         if not all(isinstance(text, str) and bool(text) for text in input_value):
             raise ValueError(f"{source}: input must contain only non-empty strings")
         if not isinstance(input_id_value, list) or len(input_id_value) != len(input_value):
@@ -111,28 +237,28 @@ def validate_request(row: Any, source: str, expected_model: str) -> dict[str, An
     if len(set(input_ids)) != len(input_ids):
         raise ValueError(f"{source}: input_id values must be unique")
 
-    encoding_format = row.get("encoding_format", "float")
-    if encoding_format not in ("float", "base64"):
+    encoding_format = row.get(REQUEST.encoding_format, DEFAULTS.encoding_format)
+    if encoding_format not in (EncodingFormat.FLOAT, EncodingFormat.BASE64):
         raise ValueError(f"{source}: encoding_format must be float or base64")
-    dimensions = row.get("dimensions")
+    dimensions = row.get(REQUEST.dimensions)
     if dimensions is not None and (
         not isinstance(dimensions, int) or isinstance(dimensions, bool) or dimensions <= 0
     ):
         raise ValueError(f"{source}: dimensions must be a positive integer")
-    user = row.get("user")
+    user = row.get(REQUEST.user)
     if user is not None and not isinstance(user, str):
         raise ValueError(f"{source}: user must be a string")
 
     body = {
         key: value
         for key, value in row.items()
-        if key != "input_id"
+        if key != REQUEST.input_id
     }
     return {
-        "input_ids": input_ids,
-        "texts": texts,
-        "body": body,
-        "input_count": len(texts),
+        REQUEST.input_ids: input_ids,
+        REQUEST.texts: texts,
+        REQUEST.body: body,
+        REQUEST.input_count: len(texts),
     }
 
 
@@ -152,75 +278,45 @@ def read_requests(input_dir: Path, expected_model: str) -> Iterable[dict[str, An
                 except json.JSONDecodeError as error:
                     raise ValueError(f"{source}: invalid JSON: {error.msg}") from error
                 request = validate_request(row, source, expected_model)
-                for input_id in request["input_ids"]:
+                for input_id in request[REQUEST.input_ids]:
                     if input_id in input_ids:
                         raise ValueError(
                             f"{source}: duplicate batch input_id {input_id!r}"
                         )
                     input_ids.add(input_id)
-                total_inputs += request["input_count"]
-                if total_inputs > 50_000:
-                    raise ValueError("batch exceeds the 50,000 embedding input limit")
+                total_inputs += request[REQUEST.input_count]
+                if total_inputs > LIMITS.max_batch_inputs:
+                    raise ValueError(
+                        f"batch exceeds the {LIMITS.max_batch_inputs:,} "
+                        "embedding input limit"
+                    )
                 yield request
 
 
-def pack_requests(
-    requests: Iterable[dict[str, Any]],
-    packing: str,
-    max_inputs_per_request: int,
-) -> Iterable[dict[str, Any]]:
-    if packing == "none":
-        for request in requests:
-            yield request
-        return
-
-    groups: dict[tuple[Any, ...], dict[str, Any]] = {}
-    for request in requests:
-        body = request["body"]
-        key = (
-            body["model"],
-            body.get("dimensions"),
-            body.get("encoding_format", "float"),
-            body.get("user"),
-        )
-        group = groups.setdefault(
-            key,
-            {
-                "input_ids": [],
-                "texts": [],
-                "body": {key: value for key, value in body.items() if key != "input"},
-            },
-        )
-        group["input_ids"].extend(request["input_ids"])
-        group["texts"].extend(request["texts"])
-
-    for group in groups.values():
-        for start in range(0, len(group["texts"]), max_inputs_per_request):
-            stop = start + max_inputs_per_request
-            input_ids = group["input_ids"][start:stop]
-            texts = group["texts"][start:stop]
-            body = {**group["body"], "input": texts}
-            yield {
-                "input_ids": input_ids,
-                "texts": texts,
-                "body": body,
-                "input_count": len(texts),
-            }
-
-
 def dry_run_response(body: dict[str, Any], model: str) -> dict[str, Any]:
-    count = 1 if isinstance(body["input"], str) else len(body["input"])
-    dimensions = body.get("dimensions", 2)
-    encoding_format = body.get("encoding_format", "float")
-    embedding: Any = "AAAAAA==" if encoding_format == "base64" else [0.0] * dimensions
+    count = 1 if isinstance(body[REQUEST.input], str) else len(body[REQUEST.input])
+    dimensions = body.get(REQUEST.dimensions, DEFAULTS.dry_run_dimensions)
+    encoding_format = body.get(REQUEST.encoding_format, DEFAULTS.encoding_format)
+    embedding: Any = (
+        DEFAULTS.dry_run_base64_embedding
+        if encoding_format == EncodingFormat.BASE64
+        else [0.0] * dimensions
+    )
     return {
-        "object": "list",
-        "data": [
-            {"object": "embedding", "embedding": embedding, "index": index}
+        RESPONSE.object: "list",
+        RESPONSE.data: [
+            {
+                RESPONSE.object: "embedding",
+                RESPONSE.embedding: embedding,
+                RESPONSE.index: index,
+            }
             for index in range(count)
         ],
-        "model": model,
-        "usage": {"prompt_tokens": 0, "total_tokens": 0},
+        RESPONSE.model: model,
+        RESPONSE.usage: {
+            RESPONSE.prompt_tokens: 0,
+            RESPONSE.total_tokens: 0,
+        },
     }
 
 
@@ -230,28 +326,41 @@ def run(
     endpoint: str,
     deployment: str,
     model: str,
-    packing: str = "batch",
-    max_inputs_per_request: int = 128,
-    max_retries: int = 8,
-    request_concurrency: int = 1,
+    packing: str = DEFAULTS.packing,
+    max_inputs_per_request: int = DEFAULTS.max_inputs_per_request,
+    max_tokens_per_request: int = DEFAULTS.max_tokens_per_request,
+    max_retries: int = DEFAULTS.max_retries,
+    request_concurrency: int = DEFAULTS.request_concurrency,
+    token_scope: str = DEFAULTS.token_scope,
     dry_run: bool = False,
 ) -> None:
-    if max_inputs_per_request < 1 or max_inputs_per_request > 2048:
-        raise ValueError("max_inputs_per_request must be between 1 and 2048")
+    if max_inputs_per_request < 1 or max_inputs_per_request > LIMITS.max_array_inputs:
+        raise ValueError(
+            "max_inputs_per_request must be between 1 and "
+            f"{LIMITS.max_array_inputs}"
+        )
+    if max_tokens_per_request < 0 or max_tokens_per_request > LIMITS.max_request_tokens:
+        raise ValueError(
+            "max_tokens_per_request must be between 0 and "
+            f"{LIMITS.max_request_tokens}"
+        )
     if max_retries < 0:
         raise ValueError("max_retries must be non-negative")
-    if request_concurrency < 1 or request_concurrency > 100:
-        raise ValueError("request_concurrency must be between 1 and 100")
+    if request_concurrency < 1 or request_concurrency > LIMITS.max_request_concurrency:
+        raise ValueError(
+            "request_concurrency must be between 1 and "
+            f"{LIMITS.max_request_concurrency}"
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
     provider = configure_tracing(output_dir)
     tracer = trace.get_tracer(__name__)
     client: Any = None
     if not dry_run:
         credential = AuthHelper.test_credential(
-            scope="https://ai.azure.com/.default",
+            scope=token_scope,
             allow_interactive=False,
         )
-        token_provider = get_bearer_token_provider(credential, "https://ai.azure.com/.default")
+        token_provider = get_bearer_token_provider(credential, token_scope)
         client = OpenAI(
             base_url=endpoint.rstrip("/") + "/",
             api_key=token_provider,
@@ -259,25 +368,39 @@ def run(
             timeout=120,
         )
 
-    output_path = output_dir / "embeddings.jsonl"
+    output_path = output_dir / FILES.embeddings
     source_line_count = 0
     online_request_count = 0
     embedding_input_count = 0
     failed_count = 0
     first_request_error: Exception | None = None
     started = time.perf_counter()
-    with tracer.start_as_current_span("batch.embed") as root_span:
-        root_span.set_attribute("embedding.deployment", deployment)
-        root_span.set_attribute("embedding.model", model)
-        root_span.set_attribute("embedding.dry_run", dry_run)
-        root_span.set_attribute("embedding.packing", packing)
-        root_span.set_attribute("embedding.max_inputs_per_request", max_inputs_per_request)
-        root_span.set_attribute("embedding.max_retries", max_retries)
-        root_span.set_attribute("embedding.request_concurrency", request_concurrency)
+    with tracer.start_as_current_span(TRACE.root_span) as root_span:
+        root_span.set_attribute(TRACE.deployment, deployment)
+        root_span.set_attribute(TRACE.model, model)
+        root_span.set_attribute(TRACE.dry_run, dry_run)
+        root_span.set_attribute(TRACE.packing, packing)
+        root_span.set_attribute(TRACE.max_inputs_per_request, max_inputs_per_request)
+        root_span.set_attribute(TRACE.max_tokens_per_request, max_tokens_per_request)
+        root_span.set_attribute(TRACE.max_retries, max_retries)
+        root_span.set_attribute(TRACE.request_concurrency, request_concurrency)
+        root_span.set_attribute(TRACE.token_scope, token_scope)
         with output_path.open("w", encoding="utf-8") as output:
             input_requests = list(read_requests(input_dir, model))
             source_line_count = len(input_requests)
-            requests = list(pack_requests(input_requests, packing, max_inputs_per_request))
+            requests = list(
+                pack_compatible_requests(
+                    input_requests,
+                    packing,
+                    max_inputs_per_request,
+                    max_tokens_per_request=(max_tokens_per_request or None),
+                    count_tokens=(
+                        token_counter_for_model(model)
+                        if max_tokens_per_request
+                        else None
+                    ),
+                )
+            )
 
             start_gate = threading.Event()
 
@@ -285,84 +408,106 @@ def run(
                 batch_number, request = item
                 start_gate.wait()
                 with trace.use_span(root_span, end_on_exit=False):
-                    with tracer.start_as_current_span("embeddings.create") as span:
+                    with tracer.start_as_current_span(TRACE.request_span) as span:
                         request_started = time.perf_counter()
                         span.set_attribute(
-                            "request.start_offset_ms",
+                            TRACE.request_start_offset_ms,
                             round((request_started - started) * 1000, 3),
                         )
-                        span.set_attribute("batch.number", batch_number)
-                        span.set_attribute("batch.embedding_input_count", request["input_count"])
-                        body = request["body"]
+                        span.set_attribute(TRACE.batch_number, batch_number)
+                        span.set_attribute(
+                            TRACE.batch_input_count,
+                            request[REQUEST.input_count],
+                        )
+                        span.set_attribute(
+                            TRACE.batch_estimated_tokens,
+                            request.get(REQUEST.estimated_tokens, 0),
+                        )
+                        body = request[REQUEST.body]
                         try:
                             if dry_run:
                                 response_body = dry_run_response(body, model)
                             else:
                                 request_body = {
-                                    key: value for key, value in body.items() if key != "model"
+                                    key: value
+                                    for key, value in body.items()
+                                    if key != REQUEST.model
                                 }
                                 raw_response = client.embeddings.with_raw_response.create(
                                     model=deployment, **request_body
                                 )
                                 response = raw_response.parse()
-                                for header_name in (
-                                    "x-ratelimit-limit-requests",
-                                    "x-ratelimit-remaining-requests",
-                                    "x-ratelimit-reset-requests",
-                                    "x-ratelimit-limit-tokens",
-                                    "x-ratelimit-remaining-tokens",
-                                    "x-ratelimit-reset-tokens",
-                                ):
+                                for header_name in RATE_LIMIT.values:
                                     header_value = raw_response.headers.get(header_name)
                                     if header_value is not None:
                                         span.set_attribute(f"http.{header_name}", header_value)
                                 response_body = response.model_dump(mode="json")
-                            span.set_attribute("http.status_code", 200)
-                            response_items = sorted(
-                                response_body["data"], key=lambda response_item: response_item["index"]
+                            span.set_attribute(
+                                TRACE.batch_prompt_tokens,
+                                int(
+                                    response_body.get(RESPONSE.usage, {}).get(
+                                        RESPONSE.prompt_tokens,
+                                        0,
+                                    )
+                                ),
                             )
-                            if [response_item["index"] for response_item in response_items] != list(
-                                range(request["input_count"])
+                            span.set_attribute(TRACE.http_status_code, 200)
+                            response_items = sorted(
+                                response_body[RESPONSE.data],
+                                key=lambda response_item: response_item[RESPONSE.index],
+                            )
+                            if [
+                                response_item[RESPONSE.index]
+                                for response_item in response_items
+                            ] != list(
+                                range(request[REQUEST.input_count])
                             ):
                                 raise ValueError("embedding response indexes are incomplete")
                             span.set_status(Status(StatusCode.OK))
                             return {
-                                "object": response_body["object"],
-                                "data": [
+                                RESPONSE.object: response_body[RESPONSE.object],
+                                RESPONSE.data: [
                                     {
                                         **response_item,
-                                        "input_id": request["input_ids"][response_item["index"]],
+                                        REQUEST.input_id: request[REQUEST.input_ids][
+                                            response_item[RESPONSE.index]
+                                        ],
                                     }
                                     for response_item in response_items
                                 ],
-                                "model": response_body["model"],
-                                "usage": response_body["usage"],
+                                RESPONSE.model: response_body[RESPONSE.model],
+                                RESPONSE.usage: response_body[RESPONSE.usage],
                             }
                         except Exception as error:
                             response = getattr(error, "response", None)
                             status_code = getattr(error, "status_code", None)
                             if status_code is not None:
-                                span.set_attribute("http.status_code", status_code)
+                                span.set_attribute(TRACE.http_status_code, status_code)
                             if response is not None:
-                                retry_after_ms = response.headers.get("retry-after-ms")
-                                retry_after = response.headers.get("retry-after")
+                                retry_after_ms = response.headers.get(
+                                    RATE_LIMIT.retry_after_ms
+                                )
+                                retry_after = response.headers.get(RATE_LIMIT.retry_after)
                                 if retry_after_ms is not None:
-                                    span.set_attribute("http.retry_after_ms", retry_after_ms)
+                                    span.set_attribute(
+                                        TRACE.http_retry_after_ms,
+                                        retry_after_ms,
+                                    )
                                 elif retry_after is not None:
-                                    span.set_attribute("http.retry_after", retry_after)
+                                    span.set_attribute(TRACE.http_retry_after, retry_after)
                             span.record_exception(error)
                             span.set_status(Status(StatusCode.ERROR, str(error)))
                             return {
-                                "input_ids": request["input_ids"],
-                                "error": {
-                                    "code": type(error).__name__,
-                                    "message": str(error),
+                                REQUEST.input_ids: request[REQUEST.input_ids],
+                                RESPONSE.error: {
+                                    RESPONSE.code: type(error).__name__,
+                                    RESPONSE.message: str(error),
                                 },
                                 "_exception": error,
                             }
                         finally:
                             span.set_attribute(
-                                "request.duration_ms",
+                                TRACE.request_duration_ms,
                                 round((time.perf_counter() - request_started) * 1000, 3),
                             )
 
@@ -375,20 +520,20 @@ def run(
                 results = (future.result() for future in futures)
                 for request, result in zip(requests, results, strict=True):
                     request_error = result.pop("_exception", None)
-                    if "error" in result:
+                    if RESPONSE.error in result:
                         failed_count += 1
                         if first_request_error is None:
                             first_request_error = request_error
                     output.write(json.dumps(result, separators=(",", ":")) + "\n")
                     online_request_count += 1
-                    embedding_input_count += request["input_count"]
+                    embedding_input_count += request[REQUEST.input_count]
 
-        root_span.set_attribute("embedding.source_line_count", source_line_count)
-        root_span.set_attribute("embedding.online_request_count", online_request_count)
-        root_span.set_attribute("embedding.input_count", embedding_input_count)
-        root_span.set_attribute("embedding.failed_count", failed_count)
+        root_span.set_attribute(TRACE.source_line_count, source_line_count)
+        root_span.set_attribute(TRACE.online_request_count, online_request_count)
+        root_span.set_attribute(TRACE.embedding_input_count, embedding_input_count)
+        root_span.set_attribute(TRACE.failed_count, failed_count)
         root_span.set_attribute(
-            "embedding.duration_ms",
+            TRACE.duration_ms,
             round((time.perf_counter() - started) * 1000, 3),
         )
         root_span.set_status(Status(StatusCode.ERROR if failed_count else StatusCode.OK))
@@ -402,7 +547,7 @@ def run(
         f"Wrote {online_request_count} response records to {output_path} "
         f"({failed_count} failed)"
     )
-    print(f"Wrote trace spans to {output_dir / 'trace.jsonl'}")
+    print(f"Wrote trace spans to {output_dir / FILES.trace}")
     if first_request_error is not None:
         raise first_request_error
 
@@ -414,10 +559,35 @@ def main() -> None:
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--deployment", required=True)
     parser.add_argument("--model", required=True)
-    parser.add_argument("--packing", choices=("none", "batch"), default="batch")
-    parser.add_argument("--max-inputs-per-request", type=int, default=128)
-    parser.add_argument("--max-retries", type=int, default=8)
-    parser.add_argument("--request-concurrency", type=int, default=1)
+    parser.add_argument(
+        "--packing",
+        choices=tuple(PackingMode),
+        default=DEFAULTS.packing,
+    )
+    parser.add_argument(
+        "--max-inputs-per-request",
+        type=int,
+        default=DEFAULTS.max_inputs_per_request,
+    )
+    parser.add_argument(
+        "--max-tokens-per-request",
+        type=int,
+        default=DEFAULTS.max_tokens_per_request,
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=DEFAULTS.max_retries,
+    )
+    parser.add_argument(
+        "--request-concurrency",
+        type=int,
+        default=DEFAULTS.request_concurrency,
+    )
+    parser.add_argument(
+        "--token-scope",
+        default=DEFAULTS.token_scope,
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     run(
@@ -428,8 +598,10 @@ def main() -> None:
         args.model,
         args.packing,
         args.max_inputs_per_request,
+        args.max_tokens_per_request,
         args.max_retries,
         args.request_concurrency,
+        args.token_scope,
         args.dry_run,
     )
 

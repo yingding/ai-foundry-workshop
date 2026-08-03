@@ -1,17 +1,27 @@
 import uuid
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 from azure.ai.ml import MLClient
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.mgmt.authorization import AuthorizationManagementClient
 from azure.mgmt.authorization.models import RoleAssignmentCreateParameters
+
+
+class RbacRole(StrEnum):
+    COGNITIVE_SERVICES_OPENAI_USER = "Cognitive Services OpenAI User"
+    STORAGE_BLOB_DATA_CONTRIBUTOR = "Storage Blob Data Contributor"
+    STORAGE_FILE_DATA_PRIVILEGED_CONTRIBUTOR = (
+        "Storage File Data Privileged Contributor"
+    )
 
 
 @dataclass(frozen=True)
 class RequiredAssignment:
     principal_name: str
     principal_id: str
-    role_name: str
+    role_name: RbacRole
     scope: str
 
 
@@ -34,7 +44,7 @@ def _role_definition_id(
     return role.id
 
 
-def _ensure_assignment(
+def ensure_assignment(
     authorization_client: AuthorizationManagementClient,
     assignment: RequiredAssignment,
 ) -> None:
@@ -59,9 +69,8 @@ def _ensure_assignment(
             f"{assignment.role_name} @ {assignment.scope.rsplit('/', 1)[-1]}"
         )
         return
-    except Exception as error:
-        if "RoleAssignmentNotFound" not in str(error) and "could not be found" not in str(error):
-            raise
+    except ResourceNotFoundError:
+        pass
 
     try:
         authorization_client.role_assignments.create(
@@ -74,9 +83,7 @@ def _ensure_assignment(
             ),
         )
         action = "created"
-    except Exception as error:
-        if "RoleAssignmentExists" not in str(error):
-            raise
+    except ResourceExistsError:
         action = "exists"
     print(
         f"  {action}: {assignment.principal_name} -> "
@@ -101,32 +108,32 @@ def configure_permissions(
         RequiredAssignment(
             principal_name=f"compute:{compute.name}",
             principal_id=compute.identity.principal_id,
-            role_name="Cognitive Services OpenAI User",
+            role_name=RbacRole.COGNITIVE_SERVICES_OPENAI_USER,
             scope=settings.foundry_scope,
         ),
         RequiredAssignment(
             principal_name=f"compute:{compute.name}",
             principal_id=compute.identity.principal_id,
-            role_name="Storage Blob Data Contributor",
+            role_name=RbacRole.STORAGE_BLOB_DATA_CONTRIBUTOR,
             scope=storage_scope,
         ),
         RequiredAssignment(
             principal_name=f"workspace:{workspace.name}",
             principal_id=workspace.identity.principal_id,
-            role_name="Storage Blob Data Contributor",
+            role_name=RbacRole.STORAGE_BLOB_DATA_CONTRIBUTOR,
             scope=storage_scope,
         ),
         RequiredAssignment(
             principal_name=f"workspace:{workspace.name}",
             principal_id=workspace.identity.principal_id,
-            role_name="Storage File Data Privileged Contributor",
+            role_name=RbacRole.STORAGE_FILE_DATA_PRIVILEGED_CONTRIBUTOR,
             scope=storage_scope,
         ),
     ]
 
     print("Ensuring runtime role assignments:")
     for assignment in assignments:
-        _ensure_assignment(authorization_client, assignment)
+        ensure_assignment(authorization_client, assignment)
 
     for assignment in assignments:
         expected_role_id = _role_definition_id(

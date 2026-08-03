@@ -159,8 +159,8 @@ RPM pair, but its current public capacity-ratio table does not include
 `text-embedding-ada-002`. The live 2026-07-31 test provides the following
 evidence:
 
-- 400 scalar requests succeeded with all starts inside 9.588 seconds.
-- Of 1,200 scalar requests, 870 succeeded and 330 returned HTTP 429.
+- 400 one-input-per-request calls succeeded with all starts inside 9.588 seconds.
+- Of 1,200 one-input-per-request calls, 870 succeeded and 330 returned HTTP 429.
 - All submission sequences 0-799 succeeded; throttling began at sequence 814;
   no sequence 1000 or greater succeeded.
 - Successful responses reported 9,060 prompt tokens, below the 15,000 TPM
@@ -244,6 +244,18 @@ In short: RPM and TPM are **paired for allocation** but **separately measured
 for enforcement**. Either limiter can produce HTTP 429. The error body does not
 always identify which counter fired.
 
+### Classify 429 evidence conservatively
+
+Use `rpm-explicit` or `tpm-explicit` only when the service response text names
+the limiter. When explicit wording is absent, use `rpm-likely` only when the
+request counter is exhausted while token headroom remains, and `tpm-likely`
+only when the token counter is exhausted while request headroom remains. Use
+`unknown` when counters are absent, both are exhausted, or evidence conflicts.
+
+`Retry-After` indicates when to retry; it does not identify RPM or TPM. APIM's
+circuit breaker also reacts to the HTTP 429 status and does not distinguish the
+underlying limiter.
+
 ## Check subscription quota allocation
 
 The following command shows total quota allocated across the active
@@ -274,7 +286,7 @@ embedding deployments:
 - `request`: count 15, renewal period 10 seconds
 - `token`: count 15,000, renewal period 60 seconds
 
-For `text-embedding-3-small`, a live 2026-07-31 data-plane test completed 100 scalar requests in
+For `text-embedding-3-small`, a live 2026-07-31 data-plane test completed 100 one-input-per-request calls in
 3.275 seconds with 20 workers, SDK retries disabled, and zero 429 responses.
 The subscription was assigned Tier 1, whose Global Standard embedding row lists
 1,000 RPM with 10-second evaluation and 1,000,000 TPM. Treat the deployment
@@ -329,7 +341,7 @@ was 7.822 seconds. This confirms that Foundry can allow bursts above the nominal
 short-window pacing calculation.
 
 In the embedding-3-small live 1,200-input test, the busiest rolling 10-second interval started 391
-scalar requests. Foundry returned 996 HTTP 200 responses and 204 HTTP 429
+one-input-per-request calls. Foundry returned 996 HTTP 200 responses and 204 HTTP 429
 `RateLimitReached` responses over 39.849 seconds. The endpoint instructed a
 30-second retry. The component preserved the result and trace records, then
 re-raised the original `openai.RateLimitError`, so AML reported the endpoint
@@ -337,7 +349,7 @@ error as the job failure.
 
 A one-request packed control containing all 1,200 inputs was also rejected with
 `RateLimitReached` and a 60-second retry instruction, but it ran while the
-endpoint was still recovering from the scalar burst. It therefore cannot prove
+endpoint was still recovering from the one-input-per-request burst. It therefore cannot prove
 that array items count as separate requests. Request rate and token rate are
 independent runtime limiters, and a clean packed comparison must run after the
 rolling throttle state has fully cleared.
@@ -346,7 +358,7 @@ rolling throttle state has fully cleared.
 
 Batching inputs with matching request settings changes request consumption, not the amount of text:
 
-- 100 scalar calls use 100 request slots.
+- 100 one-input-per-request calls use 100 request slots.
 - One call containing an array of 100 texts uses one request slot.
 - TPM remains approximately the sum of tokens in those same 100 texts.
 

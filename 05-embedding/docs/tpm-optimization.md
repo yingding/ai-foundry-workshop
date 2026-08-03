@@ -134,6 +134,12 @@ Use Azure API Management only after the backend deployments have independent
 usable TPM. APIM doesn't create model quota. It exposes one application endpoint
 and distributes requests across capacity already assigned to its backends.
 
+Request packing remains active before this routing step. The shared
+`utils/embedding_optimization.py` module supplies compatible request packing to
+AML and APIM experiments, then supplies pacing and TPM normalization to the load
+runner. The combined sequence is therefore **pack for RPM, route for aggregate
+TPM, pace below the aggregate boundary**.
+
 Recommended APIM capabilities:
 
 - backend pool containing the regional embedding endpoints;
@@ -159,6 +165,16 @@ balancing. Circuit breakers can temporarily stop traffic to a throttled backend.
 Because APIM load balancing is distributed and approximate, every backend still
 needs its own retry, pacing, and monitoring controls.
 
+In this PoC, each single backend opens its circuit after three HTTP 429
+responses observed within 30 seconds. It accepts the backend `Retry-After`
+duration and otherwise uses a one-minute trip duration. The circuit breaker
+affects subsequent routing; it does not replay the request that received 429.
+The current API policy has no APIM `retry` wrapper, so the caller receives that
+failure and must apply bounded backoff. See
+[APIM ADA proof of concept](apim-ada-poc.md#circuit-breaker-configuration-and-behavior)
+for the applied resource contract, policy XML, state transitions, and
+interpretation guidance.
+
 Sources:
 
 - [Use a gateway with multiple model deployments](https://learn.microsoft.com/azure/architecture/ai-ml/guide/azure-openai-gateway-multi-backend#gateway-implementations)
@@ -167,6 +183,25 @@ Sources:
 - [AI gateway scalability and token limits](https://learn.microsoft.com/azure/api-management/genai-gateway-capabilities#scalability-and-performance)
 
 ## Verified APIM proof-of-concept configuration
+
+The implementation uses three Python modules: `apim_ada_poc.py` provisions and
+validates the existing APIM configuration, `apim_ada_load.py` runs local
+synchronous experiments, and `apim_ada_analyze.py` produces offline JSON and
+Markdown behavior reports. Shared RBAC behavior comes from
+`permissions_setup.py`. The commands are registered in `pyproject.toml`, and
+the preview APIM management surface is pinned to
+`azure-mgmt-apimanagement==6.0.0b1` in both dependency manifests.
+
+Focused standard-library tests cover the measurement and identity contracts.
+The detailed implementation inventory, output schema, and security boundaries
+are documented in [APIM ADA proof of concept](apim-ada-poc.md#implementation-map).
+Portal navigation for the API policy, operation, pool weights, individual
+breakers, subscription, and managed identity is documented in
+[Find the configuration in Azure Portal](apim-ada-poc.md#find-the-configuration-in-azure-portal).
+Managed identity is the implemented backend authentication. A separate
+per-backend Foundry API-key alternative, including its two-key requirement and
+portal configuration, is documented in
+[API key authentication options](apim-ada-poc.md#api-key-authentication-options).
 
 The subscription contains two matching ADA deployments backed by independent
 regional Global Standard quota pools. Both use the same deployment name, model,
@@ -210,10 +245,11 @@ Use the existing APIM instance with the strongest AI-gateway prerequisites:
 | Public network access | Enabled |
 | Existing AI pattern | Backend routing plus `llm-token-limit` policy |
 
-The APIM managed identity currently has no role assignment on either ADA
-account. Before the proof of concept, grant it `Cognitive Services OpenAI User`
-at each account scope. Do not use account keys when managed identity is
-available.
+The PoC setup grants the APIM system-assigned managed identity `Cognitive
+Services OpenAI User` at each ADA account scope. The assignments were created
+and verified when the APIM configuration was applied. Account keys are not used.
+See [Identity and RBAC concept](rbac-concept.md) for the complete AML, Storage,
+APIM, and Foundry trust model.
 
 ### Gateway shape
 
@@ -242,6 +278,11 @@ Keep the deployment segment in the request path unchanged. Both backends use
 
 ### Proof-of-concept sequence
 
+The current `apim-ada-load` smoke, RPM, and TPM experiments run as a local
+synchronous client against direct Foundry endpoints and APIM. They do not invoke
+the AML batch endpoint or the `embedding-ada-v1` AML deployment. This isolates
+APIM and Foundry behavior before changing the existing AML execution path.
+
 1. Record direct baseline results for each backend independently with identical
         batch-mode inputs.
 2. Confirm both responses contain 1,536-dimensional vectors and preserve every
@@ -260,6 +301,8 @@ Keep the deployment segment in the request path unchanged. Both backends use
         and the APIM pool show distinct boundaries.
 9. Accept the configuration only if APIM approaches the expected two-backend
         gain without corrupting vectors, losing IDs, or materially increasing 429s.
+10. After the gateway passes, integrate its endpoint into the AML ADA component
+        and rerun end-to-end batch validation as a separate experiment.
 
 ### Acceptance criteria
 
@@ -278,6 +321,45 @@ West US can have higher network latency from the East US APIM instance. Keep
 50:50 as the capacity-derived starting point, then adjust weights only from
 measured throughput and latency. Do not interpret a lower-latency backend as
 having more TPM.
+
+### Experiment evidence
+
+The APIM path, managed identity, response contract, 1,536 dimensions, and index
+correlation have been verified with a two-input smoke test. Primary-to-secondary
+minimum cosine similarity was `0.9999398402`; the sampled gateway response
+matched the primary vector exactly. Matched low-rate direct and gateway probes
+also completed without HTTP 429 or 503 responses.
+
+A three-minute 24K run sustained 23,988.846 TPM, and a three-minute 27K run
+sustained 25,536.802 TPM. All 107 combined requests succeeded with no HTTP 429
+or 503. These runs demonstrate usable throughput above one 15,000-TPM backend,
+but they still need repetition and backend-member telemetry.
+
+The matched three-minute primary direct control sustained 14,234.792 TPM with
+30 of 33 successful requests and three `rpm-explicit` 429 responses. Relative
+to that measured control, the pooled runs increased steady throughput by
+68.523% and 79.397%, respectively, while eliminating observed throttling in
+those windows.
+
+A parallel AML deployment, `embedding-ada-apim-v1`, was added without replacing
+`embedding-ada-v1`. Its first end-to-end job processed 200 inputs in two packed
+APIM requests with zero failures. Downloaded results contained exactly 200
+unique IDs and finite 1,536-dimensional vectors. The AML-facing APIM API
+validates the compute managed identity and uses no client subscription key.
+
+These results prove compatibility, connectivity, throughput above one backend,
+and the parallel AML execution path. They do not yet prove the backend traffic
+share, repeated production stability, or circuit-breaker recovery. Those claims
+require repeated clean-window load tests, backend attribution, and a separate
+breaker experiment.
+
+An outbound policy-context probe returned only the pool ID and type, not the
+selected member. Routing-share evidence must therefore come from APIM gateway
+diagnostics or Azure Monitor backend telemetry rather than response headers,
+latency, or vector equality.
+
+See [APIM ADA proof of concept](apim-ada-poc.md) for experiment purposes,
+controls, commands, detailed results, evidence status, and interpretation rules.
 
 ## Decision sequence
 
