@@ -38,6 +38,7 @@ from utils.embedding_optimization import (
     REQUEST,
     capacity_units_to_tpm,
     embedding_request,
+    input_pacing_interval_seconds,
     pack_compatible_requests,
     pacing_interval_seconds,
     percentile as optimization_percentile,
@@ -210,6 +211,7 @@ class OptimizationUtilityTests(unittest.TestCase):
         interval = pacing_interval_seconds(1400, 24000)
         self.assertEqual(interval, 3.5)
         self.assertEqual(tokens_per_minute(1400, interval), 24000)
+        self.assertEqual(input_pacing_interval_seconds(100, 720), 100 / 12)
 
     def test_shared_percentile_validates_boundaries(self) -> None:
         self.assertIsNone(optimization_percentile([], 50))
@@ -266,9 +268,16 @@ class AmlMetricTests(unittest.TestCase):
             ],
             max_inputs_per_request=100,
             max_tokens_per_request=1200,
+            target_tpm=12000,
+            target_inputs_per_minute=720,
         )
 
         self.assertEqual(metrics[METRICS.attempted_rpm], 30.0)
+        self.assertEqual(metrics[METRICS.configured_target_tpm], 12000.0)
+        self.assertEqual(
+            metrics[METRICS.configured_target_inputs_per_minute],
+            720.0,
+        )
         self.assertEqual(metrics[METRICS.successful_rpm], 15.0)
         self.assertEqual(metrics[METRICS.accepted_tpm], 15000.0)
         self.assertEqual(metrics[METRICS.success_rate], 0.5)
@@ -452,14 +461,15 @@ class ApimPolicyTests(unittest.TestCase):
 class AmlNamingTests(unittest.TestCase):
     def test_experiment_name_is_stable_and_human_readable(self) -> None:
         self.assertEqual(
-            experiment_name("ada-apim", "batch"),
-            "embeddings-ada-apim-packed-input-array",
+            experiment_name("ada-apim", "batch", "tpm"),
+            "embeddings-tpm-ada-apim-packed-input-array",
         )
 
     def test_job_name_describes_run_settings(self) -> None:
         value = job_name(
             model_key="ada-apim",
             packing="batch",
+            experiment_kind="tpm",
             record_count=200,
             max_inputs_per_request=128,
             max_tokens_per_request=1200,
@@ -470,15 +480,21 @@ class AmlNamingTests(unittest.TestCase):
 
         self.assertEqual(
             value,
-            "embeddings-ada-apim-packed-input-array-records-200-items-128-"
+            "embeddings-tpm-ada-apim-packed-input-array-records-200-items-128-"
             "tokens-1200-"
             "retries-0-workers-1-2026-08-03-131500z",
         )
 
     def test_one_input_per_request_label_is_explicit(self) -> None:
         self.assertEqual(
-            experiment_name("ada", "none"),
-            "embeddings-ada-one-input-per-request",
+            experiment_name("ada", "none", "rpm"),
+            "embeddings-rpm-ada-one-input-per-request",
+        )
+
+    def test_experiment_kind_separates_same_route_and_packing(self) -> None:
+        self.assertNotEqual(
+            experiment_name("ada", "batch", "rpm"),
+            experiment_name("ada", "batch", "tpm"),
         )
 
     def test_public_model_and_packing_values_remain_stable(self) -> None:

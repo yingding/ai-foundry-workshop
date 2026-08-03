@@ -1,0 +1,51 @@
+site_name: Batch Embeddings on Azure Foundry and Azure Machine Learning
+site_author: Yingding Wang
+site_description: A one-hour evidence-driven workshop for optimizing document embeddings with AML batch jobs, request packing, MLflow metrics, and APIM backend pooling.
+site_url: https://yingding.github.io/ai-foundry-workshop/
+repo_name: ai-foundry-workshop
+repo_url: https://github.com/yingding/ai-foundry-workshop
+edit_uri: edit/main/
+copyright: Copyright &copy; 2026 Yingding Wang
+
+docs_dir: 05-batch-embedding/docs
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue
+      accent: amber
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.footer
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - 1. Problem and Architecture: index.md
+  - 2. Quick Start: 02-quick-start.md
+  - 3. RPM and Packing Experiment: 03-rpm-packing-experiment.md
+  - 4. TPM and APIM Pooling Experiment: 04-tpm-apim-pooling-experiment.md
+  - 5. Evidence and Operations: 05-evidence-and-operations.md

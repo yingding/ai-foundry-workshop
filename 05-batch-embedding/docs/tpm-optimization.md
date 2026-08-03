@@ -9,7 +9,7 @@ sizing, pacing, and utilization measurements.
 
 ## Current baseline
 
-The `text-embedding-ada-002-test` deployment currently has:
+The `text-embedding-ada-002-test` ADA Embedding Model deployment currently has:
 
 - 15,000 assigned TPM;
 - ARM SKU capacity 15;

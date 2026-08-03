@@ -15,6 +15,145 @@ the token capacity assigned to the deployment.
 This is both a design record and an implemented validation plan. Token-aware
 packing is implemented in `utils/embedding_optimization.py` with `tiktoken`.
 
+## Packing and pacing are different controls
+
+The implementation applies three controls in sequence. “Dual pacing” is not a
+second kind of packing.
+
+```text
+logical document chunks
+   -> pack compatible chunks into request arrays
+   -> stop each array at the item or token ceiling
+   -> schedule each completed request using token and input-rate pacing
+   -> send to direct Foundry or the APIM pool
+```
+
+| Control | Decision | Constraint source | What it solves |
+| --- | --- | --- | --- |
+| Packing | Which inputs share one HTTP request? | Embeddings API supports an input array | Reduces client HTTP requests |
+| Token-aware packing | When must the current array close? | Per-request item/token limits and the deployment-derived operational token target | Prevents oversized or uneven requests |
+| TPM pacing | How long before the next request starts? | Assigned deployment TPM and utilization target | Controls accepted token rate over time |
+| Input-rate pacing | How long before the next request starts? | Empirical ADA Embedding Model call-rate behavior | Controls logical input admission when packed arrays still trigger call-rate 429 |
+
+The final scheduler uses the slower interval:
+
+$$
+\mathrm{request\ interval}
+=\max\left(
+\frac{\mathrm{batch\ tokens}\times60}{\mathrm{target\ TPM}},
+\frac{\mathrm{batch\ inputs}\times60}{\mathrm{target\ inputs/minute}}
+\right)
+$$
+
+The first term is derived from assigned TPM. The second is an empirical safety
+control, not a published Azure formula for `text-embedding-ada-002`.
+
+### When pacing is required
+
+Pacing is optional. It is not required merely because an application uses an
+Azure OpenAI embedding deployment, AML batch endpoint, or APIM pool.
+
+No explicit pacing is needed when all of the following remain true under the
+real workload:
+
+- natural request arrival stays below the deployment's effective RPM and TPM;
+- packing and concurrency do not create startup bursts;
+- the assigned deployment capacity is sufficient for peak demand;
+- occasional service variability can be handled by the application's retry and
+   backpressure design.
+
+Use `--target-tpm 0 --target-inputs-per-minute 0` to disable component pacing.
+
+Pacing becomes useful when an asynchronous batch job can release work faster
+than the online model deployment admits it. Correct RBAC, endpoints, and quota
+allocation do not make AML or APIM automatically schedule requests against the
+Foundry deployment's current rate-limit counters:
+
+- AML schedules the batch compute job and can execute requests concurrently;
+- APIM distributes requests across eligible backends but does not create model
+   quota or automatically smooth all traffic to each backend's TPM/RPM window;
+- OpenAI SDK retries react after throttling, while pacing is proactive admission
+   control.
+
+For this workshop, pacing is primarily an **experiment control**. It fixes the
+offered load so direct and pooled routes can be compared without retries hiding
+the boundary. A production system can place the same responsibility in a queue
+consumer, distributed rate limiter, workflow scheduler, or conservative worker
+concurrency instead of using this component's in-process scheduler.
+
+### Where the two pressures come from
+
+Document chunking creates logical inputs. If one document becomes 1,200 chunks,
+the workload contains 1,200 embedding inputs regardless of how those inputs are
+grouped into HTTP requests.
+
+- One-input mode can send 1,200 HTTP requests and 1,200 logical inputs.
+- Packing 100 at a time can send about 12 HTTP requests but still carries 1,200
+   logical inputs and approximately the same tokens.
+- Token-aware packing can create 13 arrays instead of 12 when a token ceiling
+   closes an array before its 100-item ceiling.
+
+Packing therefore proves a reduction in **client HTTP requests**. It does not by
+itself prove that Azure's model-side call-rate accounting decreases by the same
+factor.
+
+### Why dual pacing was added
+
+A paced AML experiment sent 1,200 small chunks through the direct ADA Embedding
+Model deployment:
+
+| Observation | Value |
+| --- | ---: |
+| Packed HTTP requests attempted | 13 |
+| Logical inputs attempted | 1,200 |
+| Successful HTTP requests | 9 |
+| Successful logical inputs | 800 |
+| Failed HTTP requests | 4 |
+| Accepted prompt tokens | 8,360 |
+| Assigned TPM | 15,000 |
+| Error text | Explicit call-rate limit |
+
+The run paced tokens toward 12,000 TPM but still received call-rate HTTP 429
+responses while accepted tokens remained below 15,000. Together with the older
+one-input experiment, this suggests the ADA Embedding Model service can account
+packed logical inputs in its call-rate enforcement. The exact algorithm and
+RPM ratio are not published, so the conclusion remains empirical.
+
+For that reason the workshop uses two independent pacing targets:
+
+- `--target-tpm` for the documented deployment token allocation;
+- `--target-inputs-per-minute` for the measured workload-specific call-rate
+   boundary.
+
+Set either value to zero to disable that pacing dimension. Both values are
+written to the child job trace and MLflow metric report.
+
+### Worked request example
+
+Assume one packed request contains 100 inputs and 1,030 tokens.
+
+For a direct 15,000-TPM deployment using an 80% token target and a conservative
+720-input/minute target:
+
+$$
+\mathrm{token\ interval}
+=\frac{1{,}030\times60}{12{,}000}=5.15\ \mathrm{seconds}
+$$
+
+$$
+\mathrm{input\ interval}
+=\frac{100\times60}{720}=8.33\ \mathrm{seconds}
+$$
+
+The scheduler waits 8.33 seconds because input-rate pacing is stricter for this
+small-chunk request. For longer chunks, token pacing can become the stricter
+term instead.
+
+!!! important
+      Dual pacing does not increase capacity. It keeps request starts below the
+      selected operating targets. APIM pooling is the separate mechanism that can
+      expose independently assigned backend capacity.
+
 ## Measured baseline
 
 The `text-embedding-ada-002-test` deployment has 15,000 assigned TPM. A live
@@ -86,7 +225,7 @@ $$
 \mathrm{target\ tokens\ per\ request}=\frac{T\cdot u}{R}
 $$
 
-For ADA with $T=15{,}000$, $u=0.8$, and $R=10$:
+For the ADA Embedding Model with $T=15{,}000$, $u=0.8$, and $R=10$:
 
 $$
 \frac{15{,}000\cdot0.8}{10}=1{,}200\ \mathrm{tokens/request}
@@ -97,10 +236,45 @@ request. That makes 100 inputs, or about 1,200 tokens, a reasonable initial
 batch target for this fixture. Production data must be measured because input
 lengths can differ substantially.
 
-The batching algorithm preserves input order within each settings group, starts
-a new array before the token target is exceeded, and always enforces the
-published embedding endpoint limits of 2,048 inputs and 300,000 aggregate input
-tokens per request.
+The batching algorithm preserves input order within each settings group and
+starts a new array before the configured item or token target is exceeded.
+
+Azure documents the following embedding request limits:
+
+| Limit | Maximum |
+| --- | ---: |
+| Inputs in one array | 2,048 |
+| Tokens in each individual input | 8,192 |
+| Aggregate input tokens in one request | 300,000 |
+
+The implementation enforces the 2,048-input and 300,000-token service
+boundaries. Each source input must also remain below the 8,192-token per-input
+limit. The configured 1,200-token target is an operational target derived from
+assigned TPM and pacing, not an Azure service maximum.
+
+Microsoft references:
+
+- [Generate embeddings with Azure OpenAI — best practices](https://learn.microsoft.com/azure/foundry/openai/how-to/embeddings#best-practices)
+- [Azure OpenAI Embeddings REST API — create embedding](https://learn.microsoft.com/rest/api/microsoft-foundry/azureopenai/embeddings#create-embedding)
+
+The API limits are upper request-shape boundaries. Practical batch size is also
+limited by the TPM/RPM pair assigned to the user's deployment. Azure allocates
+TPM from SKU capacity and assigns a model-specific RPM proportionally:
+
+$$
+\mathrm{assigned\ TPM}=\mathrm{SKU\ capacity}\times1{,}000
+$$
+
+$$
+\mathrm{assigned\ RPM}
+=\frac{\mathrm{assigned\ TPM}}{1{,}000}\times r_{model}
+$$
+
+Microsoft does not currently publish $r_{model}$ for
+`text-embedding-ada-002`. The approximately 900-RPM value used in analysis is
+an empirical inference from call-rate errors, not a service contract. See
+[TPM and RPM verification](tpm-rpm-verification.md#ada-rpm-analysis) for the
+full documented formulas, response evidence, and discrepancies.
 
 ## 3. Pace batches against TPM
 

@@ -31,7 +31,12 @@ from utils.aml_metrics import (
     calculate_run_metrics,
     publish_run_metrics,
 )
-from utils.embedding_optimization import pack_compatible_requests, token_counter_for_model
+from utils.embedding_optimization import (
+    input_pacing_interval_seconds,
+    pack_compatible_requests,
+    pacing_interval_seconds,
+    token_counter_for_model,
+)
 
 
 class PackingMode(StrEnum):
@@ -85,6 +90,8 @@ class TraceContract:
     packing: str = "embedding.packing"
     max_inputs_per_request: str = "embedding.max_inputs_per_request"
     max_tokens_per_request: str = "embedding.max_tokens_per_request"
+    target_tpm: str = "embedding.target_tpm"
+    target_inputs_per_minute: str = "embedding.target_inputs_per_minute"
     max_retries: str = "embedding.max_retries"
     request_concurrency: str = "embedding.request_concurrency"
     token_scope: str = "embedding.token_scope"
@@ -127,6 +134,8 @@ class ComponentDefaults:
     encoding_format: EncodingFormat = EncodingFormat.FLOAT
     max_inputs_per_request: int = 128
     max_tokens_per_request: int = 0
+    target_tpm: int = 0
+    target_inputs_per_minute: float = 0
     max_retries: int = 8
     request_concurrency: int = 1
     token_scope: str = "https://ai.azure.com/.default"
@@ -339,6 +348,8 @@ def run(
     packing: str = DEFAULTS.packing,
     max_inputs_per_request: int = DEFAULTS.max_inputs_per_request,
     max_tokens_per_request: int = DEFAULTS.max_tokens_per_request,
+    target_tpm: int = DEFAULTS.target_tpm,
+    target_inputs_per_minute: float = DEFAULTS.target_inputs_per_minute,
     max_retries: int = DEFAULTS.max_retries,
     request_concurrency: int = DEFAULTS.request_concurrency,
     token_scope: str = DEFAULTS.token_scope,
@@ -356,6 +367,10 @@ def run(
             "max_tokens_per_request must be between 0 and "
             f"{LIMITS.max_request_tokens}"
         )
+    if target_tpm < 0:
+        raise ValueError("target_tpm must be non-negative")
+    if target_inputs_per_minute < 0:
+        raise ValueError("target_inputs_per_minute must be non-negative")
     if max_retries < 0:
         raise ValueError("max_retries must be non-negative")
     if request_concurrency < 1 or request_concurrency > LIMITS.max_request_concurrency:
@@ -402,6 +417,11 @@ def run(
         root_span.set_attribute(TRACE.packing, packing)
         root_span.set_attribute(TRACE.max_inputs_per_request, max_inputs_per_request)
         root_span.set_attribute(TRACE.max_tokens_per_request, max_tokens_per_request)
+        root_span.set_attribute(TRACE.target_tpm, target_tpm)
+        root_span.set_attribute(
+            TRACE.target_inputs_per_minute,
+            target_inputs_per_minute,
+        )
         root_span.set_attribute(TRACE.max_retries, max_retries)
         root_span.set_attribute(TRACE.request_concurrency, request_concurrency)
         root_span.set_attribute(TRACE.token_scope, token_scope)
@@ -425,10 +445,35 @@ def run(
             )
 
             start_gate = threading.Event()
+            pacing_lock = threading.Lock()
+            next_request_at = started
 
             def execute_request(item: tuple[int, dict[str, Any]]) -> dict[str, Any]:
+                nonlocal next_request_at
                 batch_number, request = item
                 start_gate.wait()
+                if target_tpm or target_inputs_per_minute:
+                    with pacing_lock:
+                        now = time.perf_counter()
+                        if next_request_at > now:
+                            time.sleep(next_request_at - now)
+                            now = time.perf_counter()
+                        intervals = []
+                        if target_tpm:
+                            intervals.append(
+                                pacing_interval_seconds(
+                                    request.get(REQUEST.estimated_tokens, 0),
+                                    target_tpm,
+                                )
+                            )
+                        if target_inputs_per_minute:
+                            intervals.append(
+                                input_pacing_interval_seconds(
+                                    request[REQUEST.input_count],
+                                    target_inputs_per_minute,
+                                )
+                            )
+                        next_request_at = max(next_request_at, now) + max(intervals)
                 with trace.use_span(root_span, end_on_exit=False):
                     with tracer.start_as_current_span(TRACE.request_span) as span:
                         request_started = time.perf_counter()
@@ -583,6 +628,8 @@ def run(
             request_measurements,
             max_inputs_per_request=max_inputs_per_request,
             max_tokens_per_request=max_tokens_per_request,
+            target_tpm=target_tpm,
+            target_inputs_per_minute=target_inputs_per_minute,
         )
         for name, value in run_metrics.items():
             root_span.set_attribute(f"metric.{name}", value)
@@ -644,6 +691,18 @@ def main() -> None:
         default=DEFAULTS.max_tokens_per_request,
     )
     parser.add_argument(
+        "--target-tpm",
+        type=int,
+        default=DEFAULTS.target_tpm,
+        help="Pace packed request starts to this token-per-minute target; zero disables pacing",
+    )
+    parser.add_argument(
+        "--target-inputs-per-minute",
+        type=float,
+        default=DEFAULTS.target_inputs_per_minute,
+        help="Apply an empirical logical-input pacing ceiling; zero disables it",
+    )
+    parser.add_argument(
         "--max-retries",
         type=int,
         default=DEFAULTS.max_retries,
@@ -674,6 +733,8 @@ def main() -> None:
         args.packing,
         args.max_inputs_per_request,
         args.max_tokens_per_request,
+        args.target_tpm,
+        args.target_inputs_per_minute,
         args.max_retries,
         args.request_concurrency,
         args.token_scope,

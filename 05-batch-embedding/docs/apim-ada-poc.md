@@ -1,7 +1,8 @@
-# APIM ADA proof of concept
+# APIM ADA Embedding Model proof of concept
 
 This proof of concept uses an existing BasicV2 API Management service to route
-embedding requests across two independently allocated ADA version 2 deployments.
+embedding requests across two independently allocated `text-embedding-ada-002`
+(ADA Embedding Model version 2) deployments.
 It does not create another APIM service.
 
 ## Provisioned shape
@@ -289,9 +290,10 @@ trip duration and that APIM can return HTTP 503 while the backend is
 unavailable. In this load-balanced pool, subsequent requests can use another
 eligible member. If no member is eligible, the gateway returns 503.
 
-The `ada` and `ada-apim` routes intentionally share the Foundry deployment name
+The literal `ada` and `ada-apim` selectors intentionally share the Foundry deployment name
 `text-embedding-ada-002-test`; the deployment name identifies the model path,
-not the transport. `ada` uses the direct Foundry base URL. `ada-apim` uses the
+not the transport. `ada` sends the ADA Embedding Model request to the direct
+Foundry base URL. `ada-apim` sends it to the
 AML-facing APIM base URL plus `/deployments/text-embedding-ada-002-test` and the
 Cognitive Services token scope. The CLI plan now prints the route and full
 endpoint so this distinction is visible before invocation.
@@ -442,7 +444,7 @@ uv run apim-ada-poc apply
 Run the focused local contract tests:
 
 ```bash
-cd 05-embedding
+cd 05-batch-embedding
 uv run python -m unittest discover -s tests -v
 ```
 
@@ -515,7 +517,7 @@ Provision and invoke it with:
 uv run aml-batch-embeddings provision-apim
 uv run aml-batch-embeddings invoke \
   --model ada-apim \
-  --input data \
+  --input data/workshop-rpm \
   --packing batch \
   --max-inputs-per-request 100 \
   --max-retries 0 \

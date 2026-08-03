@@ -21,6 +21,8 @@ class RequestMeasurement:
 
 @dataclass(frozen=True)
 class MetricNames:
+    configured_target_tpm: str = "configured_target_tpm"
+    configured_target_inputs_per_minute: str = "configured_target_inputs_per_minute"
     attempted_requests: str = "attempted_requests"
     successful_requests: str = "successful_requests"
     failed_requests: str = "failed_requests"
@@ -69,9 +71,15 @@ def calculate_run_metrics(
     measurements: list[RequestMeasurement],
     max_inputs_per_request: int = 0,
     max_tokens_per_request: int = 0,
+    target_tpm: int = 0,
+    target_inputs_per_minute: float = 0,
 ) -> dict[str, float]:
     if not measurements:
         return {
+            METRICS.configured_target_tpm: float(target_tpm),
+            METRICS.configured_target_inputs_per_minute: float(
+                target_inputs_per_minute
+            ),
             METRICS.attempted_requests: 0.0,
             METRICS.successful_requests: 0.0,
             METRICS.failed_requests: 0.0,
@@ -123,6 +131,10 @@ def calculate_run_metrics(
     )
     rate_factor = 60.0 / window_seconds if window_seconds > 0 else 0.0
     return {
+        METRICS.configured_target_tpm: float(target_tpm),
+        METRICS.configured_target_inputs_per_minute: float(
+            target_inputs_per_minute
+        ),
         METRICS.attempted_requests: float(attempted_requests),
         METRICS.successful_requests: float(successful_requests),
         METRICS.failed_requests: float(attempted_requests - successful_requests),

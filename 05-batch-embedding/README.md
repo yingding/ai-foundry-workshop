@@ -1,15 +1,59 @@
 # Foundry batch embeddings
 
+> **Disclaimer:** This is a learning and proof-of-concept implementation. It is
+> not production hardened. Revalidate quotas, model availability, networking,
+> identity, retry behavior, and operational targets in your own environment.
+
+## Contents
+
+- [Project Map](#project-map)
+- [Workshop Tutorial](#workshop-tutorial)
+- [Input and Output Format](#input-and-output-format)
+- [RPM Optimization](#rpm-optimization)
+- [Architecture](#architecture)
+- [Setup](#setup)
+- [Provisioning](#provision-one-endpoint-with-four-deployments)
+- [Invoking Deployments](#invoke-the-small-model)
+- [Downloading Results](#download-results)
+
+## Project Map
+
+| Path | Audience | Purpose |
+|---|---|---|
+| `batch_embeddings.py` | Operators and developers | Provision AML deployments, submit/monitor jobs, download outputs, and export MLflow metrics |
+| `component/embed.py` | Component developers | Validate, pack, optionally pace, call the model endpoint, and emit outputs/traces/metrics |
+| `utils/embedding_optimization.py` | Developers | Shared packing, token counting, pacing, and throughput formulas |
+| `utils/aml_metrics.py` | Developers | Run-level RPM/TPM, reliability, latency, and packing metrics with optional MLflow publishing |
+| `docs/index.md` through `docs/05-*.md` | Workshop participants | The five-page, one-hour guided tutorial |
+| `docs/apim-ada-poc.md` | Implementers | Full APIM provisioning, policy, experiment, and acceptance evidence |
+| `docs/rpm-optimization.md` | Implementers | Packing and optional admission-control design |
+| `docs/tpm-optimization.md` | Implementers | Deployment capacity and APIM pooling strategy |
+| `docs/tpm-rpm-verification.md` | Reviewers | Azure formulas, CLI verification, and empirical discrepancies |
+| `docs/rbac-concept.md` | Security reviewers | Managed identity and role-assignment model |
+
+## Workshop Tutorial
+
+Run the MkDocs site from the repository root:
+
+```bash
+uvx --from mkdocs-material mkdocs serve
+```
+
+The tutorial navigation intentionally contains five lessons. The additional
+Markdown files under `docs/` are deep references linked from those lessons and
+are not separate workshop steps.
+
 This sample exposes three Microsoft Foundry embedding models through four
-deployments on one Azure Machine Learning batch endpoint. Direct ADA and
-APIM-pooled ADA remain separate for A/B testing and rollback.
+deployments on one Azure Machine Learning batch endpoint. Direct
+`text-embedding-ada-002` (ADA Embedding Model) and APIM-pooled ADA Embedding
+Model routes remain separate for A/B testing and rollback.
 
 | CLI choice | AML deployment role | Foundry model | Dimensions |
 | --- | --- | --- | --- |
 | `small` | Small-model deployment | `text-embedding-3-small` | 1,536 |
 | `large` | Large-model deployment | `text-embedding-3-large` | 3,072 |
-| `ada` | ADA deployment | `text-embedding-ada-002` | 1,536 |
-| `ada-apim` | ADA through APIM regional pool | `text-embedding-ada-002` | 1,536 |
+| `ada` | Direct ADA Embedding Model deployment | `text-embedding-ada-002` | 1,536 |
+| `ada-apim` | ADA Embedding Model through APIM regional pool | `text-embedding-ada-002` | 1,536 |
 
 Select the model per invocation with `--model small`, `--model large`,
 `--model ada`, or `--model ada-apim`.
@@ -61,6 +105,22 @@ input. The local APIM experiments use the same packer for RPM tests and use
 `pacing_interval_seconds` plus `tokens_per_minute` for TPM tests. Direct ADA and
 APIM-pooled ADA therefore apply the same request-packing behavior.
 
+Packing and pacing are separate. Packing creates input arrays; token-aware
+packing closes an array at its item or token ceiling. Optional AML dual pacing
+then delays request starts by the stricter of the configured token-rate interval
+and logical-input-rate interval. Use `--target-tpm` for token pacing and
+`--target-inputs-per-minute` for the empirical ADA Embedding Model call-rate
+guard. The input-rate target is workload-derived because Microsoft does not
+currently publish the model's exact RPM ratio.
+
+Both pacing controls are optional and default to disabled. They are useful for
+controlled experiments or bursty jobs; a naturally low-rate workload with
+sufficient assigned capacity does not need an in-component pacing algorithm.
+AML provides asynchronous job orchestration and APIM provides routing, but
+neither service automatically schedules model calls to the current Foundry
+TPM/RPM counters. Production admission control can instead live in a queue,
+distributed rate limiter, or workflow scheduler.
+
 RPM and TPM are dependent only when quota is allocated: each model capacity
 unit supplies a predefined RPM/TPM pair, so they cannot be configured
 independently. During inference, Azure measures request rate and estimated token
@@ -74,15 +134,16 @@ The AML component can batch JSONL lines with matching request settings into Open
 | `none` | 100 | 100 | 100% |
 | `batch` | 100 | 1 | 1% |
 
-Run the local A/B demonstration over the same `data/sample.jsonl` file:
+Run the local A/B demonstration over the same
+`data/workshop-rpm/short-chunks.jsonl` corpus:
 
 ```bash
 uv run aml-batch-embeddings test \
-    --model small --input data --output outputs/demo-unoptimized \
+    --model small --input data/workshop-rpm --output outputs/demo-unoptimized \
     --packing none
 
 uv run aml-batch-embeddings test \
-    --model small --input data --output outputs/demo-optimized \
+    --model small --input data/workshop-rpm --output outputs/demo-optimized \
     --packing batch
 ```
 
@@ -131,7 +192,7 @@ requests per 10-second pacing calculation without throttling. The formula is
 therefore useful for conservative client pacing, but it is not an exact public
 cutoff; Foundry applies service-controlled burst capacity and evaluation state.
 
-### Measured ADA rate limit
+### Measured ADA Embedding Model rate limit
 
 The ADA deployment `text-embedding-ada-002-test` has capacity 15, or 15,000
 assigned TPM. It accepted 400 one-input-per-request calls whose starts fit inside 9.588
@@ -170,16 +231,30 @@ counter precisely.
 
 Use `--request-concurrency` only for controlled load testing. Normal invocations
 default to one worker. Comparable runs use a stable experiment name such as
-`embeddings-ada-apim-packed-input-array`. Each invocation also requests a
+`embeddings-tpm-ada-apim-packed-input-array`. Each invocation also requests a
 detailed job name such as
-`embeddings-ada-apim-packed-input-array-records-200-items-128-tokens-1200-retries-0-workers-1-2026-08-03-131500z`.
+`embeddings-tpm-ada-apim-packed-input-array-records-200-items-128-tokens-1200-retries-0-workers-1-2026-08-03-131500z`.
 AML can still display its generated immutable `pipelinejob-...` identifier.
 
 The CLI retains `--packing none` and `--packing batch` for compatibility. Their
 explicit meanings are **one input per HTTP request** and **packed input array**,
 respectively.
 
-Batching is deterministic and groups only requests with identical `model`, `dimensions`, `encoding_format`, and `user` values. It does not semantically shuffle or cluster text. `--max-inputs-per-request` controls the maximum batched array size and defaults to 128; the service limit is 2,048. Each text and each combined request must still fit the embedding model's token limits. The deployed AML component uses batch mode and disables pipeline output reuse so each submitted job calls Foundry.
+Batching is deterministic and groups only requests with identical `model`,
+`dimensions`, `encoding_format`, and `user` values. It does not semantically
+shuffle or cluster text. `--max-inputs-per-request` controls the maximum batched
+array size and defaults to 128.
+
+| Azure embedding request limit | Maximum |
+| --- | ---: |
+| Inputs in one array | 2,048 |
+| Tokens in each individual input | 8,192 |
+| Aggregate input tokens in one request | 300,000 |
+
+See [Azure embedding best practices](https://learn.microsoft.com/azure/foundry/openai/how-to/embeddings#best-practices)
+and the [Embeddings REST API](https://learn.microsoft.com/rest/api/microsoft-foundry/azureopenai/embeddings#create-embedding).
+The deployed AML component uses batch mode and disables pipeline output reuse
+so each submitted job calls Foundry.
 
 ## Architecture
 
@@ -201,7 +276,7 @@ Resource names, subscription identifiers, regions, and endpoints are supplied th
 ## Setup
 
 ```bash
-cd 05-embedding
+cd 05-batch-embedding
 cp config/.env.example config/.env
 uv sync
 uv run aml-batch-embeddings plan
@@ -259,25 +334,25 @@ uv run aml-batch-embeddings provision-apim
 ## Invoke the small model
 
 ```bash
-uv run aml-batch-embeddings invoke --model small --input data
+uv run aml-batch-embeddings invoke --model small --input data/workshop-rpm
 ```
 
 ## Invoke the large model
 
 ```bash
-uv run aml-batch-embeddings invoke --model large --input data
+uv run aml-batch-embeddings invoke --model large --input data/workshop-rpm
 ```
 
-## Invoke the ADA model
+## Invoke the ADA Embedding Model directly
 
 ```bash
-uv run aml-batch-embeddings invoke --model ada --input data
+uv run aml-batch-embeddings invoke --model ada --input data/workshop-rpm
 ```
 
-## Invoke ADA through the APIM pool
+## Invoke the ADA Embedding Model through the APIM pool
 
 ```bash
-uv run aml-batch-embeddings invoke --model ada-apim --input data
+uv run aml-batch-embeddings invoke --model ada-apim --input data/workshop-rpm
 ```
 
 The `ada-apim` deployment obtains a token for the Cognitive Services audience

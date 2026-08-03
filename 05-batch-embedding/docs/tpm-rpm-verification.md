@@ -30,7 +30,7 @@ Load the project configuration without printing its values, then query the three
 deployments:
 
 ```bash
-cd 05-embedding
+cd 05-batch-embedding
 set -a
 source config/.env
 set +a

@@ -208,6 +208,18 @@ def pacing_interval_seconds(prompt_tokens: int, target_tpm: int) -> float:
     return prompt_tokens * 60 / target_tpm
 
 
+def input_pacing_interval_seconds(
+    input_count: int,
+    target_inputs_per_minute: float,
+) -> float:
+    """Return spacing for an empirical logical-input rate ceiling."""
+    if input_count < 0:
+        raise ValueError("input_count must be non-negative")
+    if target_inputs_per_minute <= 0:
+        raise ValueError("target_inputs_per_minute must be positive")
+    return input_count * 60 / target_inputs_per_minute
+
+
 def tokens_per_minute(prompt_tokens: int, elapsed_seconds: float) -> float:
     """Normalize accepted prompt tokens to a one-minute rate."""
     if prompt_tokens < 0:

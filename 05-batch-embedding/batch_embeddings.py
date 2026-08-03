@@ -51,6 +51,12 @@ class PackingMode(StrEnum):
     PACKED_INPUT_ARRAY = "batch"
 
 
+class ExperimentKind(StrEnum):
+    SMOKE = "smoke"
+    RPM = "rpm"
+    TPM = "tpm"
+
+
 @dataclass(frozen=True)
 class EnvironmentKeys:
     subscription_id: str = "AZURE_SUBSCRIPTION_ID"
@@ -91,6 +97,8 @@ class BatchDefaults:
     packing: PackingMode = PackingMode.PACKED_INPUT_ARRAY
     max_inputs_per_request: int = 128
     max_tokens_per_request: int = 0
+    target_tpm: int = 0
+    target_inputs_per_minute: float = 0
     max_retries: int = 8
     request_concurrency: int = 1
     metric_logging: MetricLoggingMode = MetricLoggingMode.MLFLOW
@@ -109,6 +117,8 @@ class PipelineFields:
     packing: str = "packing"
     max_inputs_per_request: str = "max_inputs_per_request"
     max_tokens_per_request: str = "max_tokens_per_request"
+    target_tpm: str = "target_tpm"
+    target_inputs_per_minute: str = "target_inputs_per_minute"
     max_retries: str = "max_retries"
     request_concurrency: str = "request_concurrency"
     metric_logging: str = "metric_logging"
@@ -142,14 +152,15 @@ def packing_label(packing: str) -> str:
     raise ValueError(f"Unsupported packing mode: {packing}")
 
 
-def experiment_name(model_key: str, packing: str) -> str:
+def experiment_name(model_key: str, packing: str, experiment_kind: str) -> str:
     """Return a stable portal grouping for comparable embedding runs."""
-    return f"embeddings-{model_key}-{packing_label(packing)}"
+    return f"embeddings-{experiment_kind}-{model_key}-{packing_label(packing)}"
 
 
 def job_name(
     model_key: str,
     packing: str,
+    experiment_kind: str,
     record_count: int,
     max_inputs_per_request: int,
     max_tokens_per_request: int,
@@ -161,7 +172,7 @@ def job_name(
     mode_label = packing_label(packing)
     token_label = str(max_tokens_per_request) if max_tokens_per_request else "off"
     return (
-        f"embeddings-{model_key}-{mode_label}-records-{record_count}-"
+        f"embeddings-{experiment_kind}-{model_key}-{mode_label}-records-{record_count}-"
         f"items-{max_inputs_per_request}-tokens-{token_label}-"
         f"retries-{max_retries}-workers-{request_concurrency}-"
         f"{timestamp.strftime('%Y-%m-%d-%H%M%Sz')}"
@@ -385,6 +396,8 @@ def create_pipeline_component(
             "--packing ${{inputs.packing}} "
             "--max-inputs-per-request ${{inputs.max_inputs_per_request}} "
             "--max-tokens-per-request ${{inputs.max_tokens_per_request}} "
+            "--target-tpm ${{inputs.target_tpm}} "
+            "--target-inputs-per-minute ${{inputs.target_inputs_per_minute}} "
             "--max-retries ${{inputs.max_retries}} "
             "--request-concurrency ${{inputs.request_concurrency}}"
         ),
@@ -401,6 +414,14 @@ def create_pipeline_component(
             FIELDS.max_tokens_per_request: Input(
                 type="integer",
                 default=default_max_tokens_per_request,
+            ),
+            FIELDS.target_tpm: Input(
+                type="integer",
+                default=DEFAULTS.target_tpm,
+            ),
+            FIELDS.target_inputs_per_minute: Input(
+                type="number",
+                default=DEFAULTS.target_inputs_per_minute,
             ),
             FIELDS.max_retries: Input(
                 type="integer",
@@ -430,6 +451,8 @@ def create_pipeline_component(
         packing: str = DEFAULTS.packing.value,
         max_inputs_per_request: int = DEFAULTS.max_inputs_per_request,
         max_tokens_per_request: int = default_max_tokens_per_request,
+        target_tpm: int = DEFAULTS.target_tpm,
+        target_inputs_per_minute: float = DEFAULTS.target_inputs_per_minute,
         max_retries: int = DEFAULTS.max_retries,
         request_concurrency: int = DEFAULTS.request_concurrency,
         metric_logging: str = DEFAULTS.metric_logging.value,
@@ -440,6 +463,8 @@ def create_pipeline_component(
             packing=packing,
             max_inputs_per_request=max_inputs_per_request,
             max_tokens_per_request=max_tokens_per_request,
+            target_tpm=target_tpm,
+            target_inputs_per_minute=target_inputs_per_minute,
             max_retries=max_retries,
             request_concurrency=request_concurrency,
             metric_logging=metric_logging,
@@ -452,6 +477,8 @@ def create_pipeline_component(
         packing=DEFAULTS.packing.value,
         max_inputs_per_request=DEFAULTS.max_inputs_per_request,
         max_tokens_per_request=default_max_tokens_per_request,
+        target_tpm=DEFAULTS.target_tpm,
+        target_inputs_per_minute=DEFAULTS.target_inputs_per_minute,
         max_retries=DEFAULTS.max_retries,
         request_concurrency=DEFAULTS.request_concurrency,
         metric_logging=DEFAULTS.metric_logging.value,
@@ -793,9 +820,12 @@ def invoke(
     settings: Settings,
     input_path: Path,
     model_key: str,
+    experiment_kind: str,
     packing: str,
     max_inputs_per_request: int,
     max_tokens_per_request: int | None,
+    target_tpm: int,
+    target_inputs_per_minute: float,
     max_retries: int,
     request_concurrency: int,
     repeat_inputs: int,
@@ -836,10 +866,11 @@ def invoke(
                 f"Prepared {record_count} records for model "
                 f"{settings.openai_models[model_key]}"
             )
-        experiment = experiment_name(model_key, packing)
+        experiment = experiment_name(model_key, packing, experiment_kind)
         readable_job_name = job_name(
             model_key,
             packing,
+            experiment_kind,
             record_count,
             max_inputs_per_request,
             max_tokens_per_request,
@@ -865,6 +896,14 @@ def invoke(
                     type="integer",
                     default=max_tokens_per_request,
                 ),
+                FIELDS.target_tpm: Input(
+                    type="integer",
+                    default=target_tpm,
+                ),
+                FIELDS.target_inputs_per_minute: Input(
+                    type="number",
+                    default=target_inputs_per_minute,
+                ),
                 FIELDS.max_retries: Input(type="integer", default=max_retries),
                 FIELDS.request_concurrency: Input(
                     type="integer", default=request_concurrency
@@ -885,7 +924,9 @@ def invoke(
             f"Submitted job ID: {job.name} "
             f"({model_key} -> {settings.openai_deployments[model_key]}, "
             f"packing={packing}, repeats={repeat_inputs}, max_retries={max_retries}, "
-            f"concurrency={request_concurrency}, metrics={metric_logging}, "
+            f"concurrency={request_concurrency}, target_tpm={target_tpm}, "
+            f"target_inputs_per_minute={target_inputs_per_minute}, "
+            f"metrics={metric_logging}, "
             f"metric_prefix={metric_prefix})"
         )
         monitor(settings, job.name)
@@ -961,6 +1002,40 @@ def download(settings: Settings, job_name: str, output_path: Path) -> None:
     print(f"Downloaded output to {output_path}")
 
 
+def export_metrics(
+    settings: Settings,
+    job_name: str,
+    output_path: Path,
+    metric_prefix: str | None,
+) -> None:
+    import mlflow
+
+    ml_client, _, _ = clients(settings)
+    requested_job = ml_client.jobs.get(job_name)
+    children = list(ml_client.jobs.list(parent_job_name=job_name))
+    metric_job = children[0] if children else requested_job
+    workspace = ml_client.workspaces.get(settings.aml_workspace)
+    mlflow.set_tracking_uri(workspace.mlflow_tracking_uri)
+    run = mlflow.get_run(metric_job.name)
+    prefix = f"{metric_prefix}." if metric_prefix else ""
+    metrics = {
+        name: value
+        for name, value in sorted(run.data.metrics.items())
+        if not prefix or name.startswith(prefix)
+    }
+    report = {
+        "requested_job_id": requested_job.name,
+        "metric_job_id": metric_job.name,
+        "metric_job_status": metric_job.status,
+        "metric_prefix": metric_prefix,
+        "metrics": metrics,
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(report, indent=2))
+    print(f"Wrote MLflow metric report to {output_path}")
+
+
 def test_local(
     settings: Settings,
     input_path: Path,
@@ -969,6 +1044,8 @@ def test_local(
     packing: str,
     max_inputs_per_request: int,
     max_tokens_per_request: int,
+    target_tpm: int,
+    target_inputs_per_minute: float,
     max_retries: int,
     request_concurrency: int,
     metric_logging: str,
@@ -985,6 +1062,8 @@ def test_local(
         packing=packing,
         max_inputs_per_request=max_inputs_per_request,
         max_tokens_per_request=max_tokens_per_request,
+        target_tpm=target_tpm,
+        target_inputs_per_minute=target_inputs_per_minute,
         max_retries=max_retries,
         request_concurrency=request_concurrency,
         dry_run=True,
@@ -1012,7 +1091,11 @@ def main() -> None:
         help="Create/update only the parallel APIM-pooled ADA AML deployment",
     )
     test_parser = subparsers.add_parser("test", help="Test parsing, outputs, and traces locally")
-    test_parser.add_argument("--input", type=Path, default=ROOT / "data")
+    test_parser.add_argument(
+        "--input",
+        type=Path,
+        default=ROOT / "data" / "workshop-rpm",
+    )
     test_parser.add_argument("--output", type=Path, default=ROOT / "outputs" / "local-test")
     test_parser.add_argument("--model", choices=MODEL_KEYS, default=ModelKey.SMALL)
     test_parser.add_argument(
@@ -1034,6 +1117,16 @@ def main() -> None:
         default=DEFAULTS.max_tokens_per_request,
     )
     test_parser.add_argument(
+        "--target-tpm",
+        type=int,
+        default=DEFAULTS.target_tpm,
+    )
+    test_parser.add_argument(
+        "--target-inputs-per-minute",
+        type=float,
+        default=DEFAULTS.target_inputs_per_minute,
+    )
+    test_parser.add_argument(
         "--max-retries",
         type=int,
         default=DEFAULTS.max_retries,
@@ -1050,8 +1143,18 @@ def main() -> None:
     )
     test_parser.add_argument("--metric-prefix", default=DEFAULTS.metric_prefix)
     invoke_parser = subparsers.add_parser("invoke", help="Submit an AML batch job")
-    invoke_parser.add_argument("--input", type=Path, default=ROOT / "data")
+    invoke_parser.add_argument(
+        "--input",
+        type=Path,
+        default=ROOT / "data" / "workshop-rpm",
+    )
     invoke_parser.add_argument("--model", choices=MODEL_KEYS, required=True)
+    invoke_parser.add_argument(
+        "--experiment-kind",
+        choices=tuple(ExperimentKind),
+        default=ExperimentKind.SMOKE,
+        help="Group AML runs by workshop purpose",
+    )
     invoke_parser.add_argument(
         "--packing",
         choices=tuple(PackingMode),
@@ -1066,6 +1169,16 @@ def main() -> None:
         default=DEFAULTS.max_inputs_per_request,
     )
     invoke_parser.add_argument("--max-tokens-per-request", type=int)
+    invoke_parser.add_argument(
+        "--target-tpm",
+        type=int,
+        default=DEFAULTS.target_tpm,
+    )
+    invoke_parser.add_argument(
+        "--target-inputs-per-minute",
+        type=float,
+        default=DEFAULTS.target_inputs_per_minute,
+    )
     invoke_parser.add_argument(
         "--max-retries",
         type=int,
@@ -1088,6 +1201,17 @@ def main() -> None:
     download_parser = subparsers.add_parser("download", help="Download a completed job output")
     download_parser.add_argument("job_name")
     download_parser.add_argument("--output", type=Path, default=ROOT / "outputs")
+    metrics_parser = subparsers.add_parser(
+        "metrics",
+        help="Export MLflow metrics from a parent pipeline or child command job",
+    )
+    metrics_parser.add_argument("job_name")
+    metrics_parser.add_argument(
+        "--output",
+        type=Path,
+        default=ROOT / "outputs" / "aml-metrics.json",
+    )
+    metrics_parser.add_argument("--prefix")
     args = parser.parse_args()
 
     settings = Settings()
@@ -1112,6 +1236,8 @@ def main() -> None:
             args.packing,
             args.max_inputs_per_request,
             args.max_tokens_per_request,
+            args.target_tpm,
+            args.target_inputs_per_minute,
             args.max_retries,
             args.request_concurrency,
             args.metric_logging,
@@ -1122,9 +1248,12 @@ def main() -> None:
             settings,
             args.input,
             args.model,
+            args.experiment_kind,
             args.packing,
             args.max_inputs_per_request,
             args.max_tokens_per_request,
+            args.target_tpm,
+            args.target_inputs_per_minute,
             args.max_retries,
             args.request_concurrency,
             args.repeat_inputs,
@@ -1135,6 +1264,8 @@ def main() -> None:
         monitor(settings, args.job_name)
     elif args.command == "download":
         download(settings, args.job_name, args.output)
+    elif args.command == "metrics":
+        export_metrics(settings, args.job_name, args.output, args.prefix)
 
 
 if __name__ == "__main__":
