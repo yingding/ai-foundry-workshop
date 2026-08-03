@@ -40,6 +40,7 @@ include = [
     "apim_ada_load.py",
     "apim_ada_analyze.py",
     "batch_embeddings.py",
+    "analyze_workshop_experiments.py",
     "network_setup.py",
     "permissions_setup.py",
     "setup_permissions.py",

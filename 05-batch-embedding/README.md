@@ -22,6 +22,8 @@
 | `component/embed.py` | Component developers | Validate, pack, optionally pace, call the model endpoint, and emit outputs/traces/metrics |
 | `utils/embedding_optimization.py` | Developers | Shared packing, token counting, pacing, and throughput formulas |
 | `utils/aml_metrics.py` | Developers | Run-level RPM/TPM, reliability, latency, and packing metrics with optional MLflow publishing |
+| `analyze_workshop_experiments.py` | Workshop authors | Regenerate the experiment comparison chart from exported AML metric JSON reports |
+| `requirements_dev.txt` | Workshop authors | Runtime dependencies plus Matplotlib for chart generation |
 | `docs/index.md` through `docs/05-*.md` | Workshop participants | The five-page, one-hour guided tutorial |
 | `docs/apim-ada-poc.md` | Implementers | Full APIM provisioning, policy, experiment, and acceptance evidence |
 | `docs/rpm-optimization.md` | Implementers | Packing and optional admission-control design |

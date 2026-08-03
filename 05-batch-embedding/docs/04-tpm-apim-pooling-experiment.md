@@ -81,8 +81,8 @@ uv run aml-batch-embeddings invoke \
   --packing batch \
   --max-inputs-per-request 100 \
   --max-tokens-per-request 1200 \
-  --target-tpm 12000 \
-  --target-inputs-per-minute 720 \
+  --target-tpm 9000 \
+  --target-inputs-per-minute 180 \
   --max-retries 0 \
   --request-concurrency 1 \
   --metric-logging mlflow \
@@ -102,8 +102,8 @@ uv run aml-batch-embeddings invoke \
   --packing batch \
   --max-inputs-per-request 100 \
   --max-tokens-per-request 1200 \
-  --target-tpm 24000 \
-  --target-inputs-per-minute 1440 \
+  --target-tpm 18000 \
+  --target-inputs-per-minute 360 \
   --max-retries 0 \
   --request-concurrency 1 \
   --metric-logging mlflow \
@@ -123,6 +123,66 @@ uv run aml-batch-embeddings metrics <pool-parent-job-id> \
 ```
 
 ## Existing Sustained Evidence
+
+### AML safe-rate comparison
+
+The completed AML comparison used the same 400 logical inputs, 17,680 prompt
+tokens, 16 packed requests, 1,200-token ceiling, retry policy, and worker count.
+Only the route and offered-load target changed:
+
+| Metric | Direct ADA Embedding Model | APIM pool |
+|---|---:|---:|
+| Parent job | `pipelinejob-95f9db54-ce1f-43c2-9e53-0768b86647fb` | `pipelinejob-0882017a-081c-43a8-9a73-11394a7fbc47` |
+| Child task | `593bc954-5ed3-46d4-a104-ac476dc2fdfe` | `82ef2a34-f84d-4707-91d0-b736fc6eba1e` |
+| Configured target TPM | 9,000 | 18,000 |
+| Configured target inputs/minute | 180 | 360 |
+| Accepted TPM | 7,946.988 | 15,867.064 |
+| Successful inputs | 400 | 400 |
+| Successful requests | 16 | 16 |
+| Prompt tokens | 17,680 | 17,680 |
+| HTTP 429 | 0 | 0 |
+| Request-window seconds | 133.485 | 66.855 |
+| Latency p50 | 1,082.512 ms | 297.979 ms |
+| Latency p95 | 1,384.656 ms | 1,690.912 ms |
+| Latency p99 | 1,791.222 ms | 3,904.900 ms |
+
+### Reading latency percentiles
+
+Latency percentiles answer, “How long did requests take?” without allowing one
+average to hide unusually slow requests:
+
+| Metric | Plain-language meaning |
+|---|---|
+| **p50** | Median latency: half of requests completed at or below this value |
+| **p95** | 95% of requests completed at or below this value; the slowest 5% took longer |
+| **p99** | 99% of requests completed at or below this value; it highlights the extreme tail |
+
+For example, pooled p95 of 1,690.912 ms means approximately 95% of measured
+requests completed within 1.691 seconds. It does **not** mean that requests were
+95% successful or 95% faster.
+
+This comparison contains only 16 requests per route. The code calculates
+percentiles by linear interpolation, so p95/p99 are useful warning signals but
+are not stable production estimates. Use hundreds or thousands of requests for
+reliable tail-latency conclusions.
+
+The pooled route increased accepted TPM by:
+
+$$
+\frac{15{,}867.064}{7{,}946.988}-1=99.661\%
+$$
+
+Downloaded output validation confirmed identical sets of 400 `input_id`
+values, zero error records, and finite 1,536-dimensional vectors on both routes.
+The result supports the pooled-capacity hypothesis at this safe operating point.
+
+The latency distribution is mixed: a typical pooled request was faster because
+p50 fell from 1,082.512 ms to 297.979 ms, while the small sample's slow tail was
+worse because p95/p99 increased. Higher aggregate throughput therefore does not
+prove uniformly lower latency. Repeat with a much larger request count before
+selecting a production operating point.
+
+### Earlier local HTTP evidence
 
 The local HTTP capacity runner previously used matched 100-input arrays over three-minute windows:
 

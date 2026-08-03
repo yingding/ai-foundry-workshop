@@ -7,16 +7,111 @@
 
 ---
 
-## The Document-Chunk Problem
+## RPM and TPM in One Minute
 
-Documents are split into smaller chunks before embedding. Smaller chunks can improve retrieval precision, but one document can become hundreds or thousands of logical embedding inputs.
+Azure OpenAI embedding deployments in **Microsoft Foundry** enforce two
+separate rate limits:
 
-| Workload | Logical inputs | Client HTTP requests | Pressure |
-|---|---:|---:|---|
-| One input per request | 100 | 100 | High client request rate |
-| Packed input array | 100 | 1–2 | Similar tokens, fewer HTTP requests |
+| Limit | Measures | Typical pressure |
+|---|---|---|
+| [**RPM — Requests Per Minute**](https://learn.microsoft.com/azure/foundry/openai/how-to/quota#understanding-rate-limits) | How many embedding operations the deployment admits over time | Many small chunks or request bursts |
+| [**TPM — Tokens Per Minute**](https://learn.microsoft.com/azure/foundry/openai/how-to/quota#understanding-rate-limits) | How many estimated input tokens the deployment admits over time | Large chunks or token-heavy batches |
 
-The model used here is `text-embedding-ada-002`, called the **ADA Embedding Model** throughout the workshop. The literal CLI selectors remain `ada` for the direct route and `ada-apim` for the pooled route.
+Azure assigns an RPM/TPM pair when capacity is allocated to a deployment, but
+evaluates request pressure and token pressure separately during inference.
+Exceeding either limit can return **HTTP 429 Too Many Requests**. The status code
+alone does not identify which limit was reached; use explicit error wording and
+available rate-limit headers.
+
+Microsoft Learn references:
+
+- [Manage Azure OpenAI quota — RPM/TPM allocation](https://learn.microsoft.com/azure/foundry/openai/how-to/quota#introduction-to-quota)
+- [Understand Azure OpenAI RPM and TPM enforcement](https://learn.microsoft.com/azure/foundry/openai/how-to/quota#understanding-rate-limits)
+
+Packing can reduce client HTTP requests, but it does not remove the tokens in
+the input. That is why the workshop tests RPM behavior first and TPM capacity
+second.
+
+## From Documents to Embedding Inputs
+
+Documents are split into chunks before embedding. Chunk size changes which
+deployment limit becomes visible first:
+
+- many **tiny chunks** create many embedding operations and request-rate
+  pressure;
+- fewer **large chunks** can consume the deployment's token budget quickly.
+
+The model used here is `text-embedding-ada-002`, called the **ADA Embedding
+Model** throughout the workshop. The literal CLI selectors remain `ada` for the
+direct route and `ada-apim` for the pooled route.
+
+## Problem 1 — Tiny Chunks Amplify RPM
+
+Assume one document is split into 1,000 small retrieval chunks. In
+one-input-per-request mode, the client creates 1,000 HTTP requests even when
+each chunk contains only a few tokens. The request or call-rate boundary can be
+reached while much of the assigned TPM remains unused.
+
+<div class="mermaid">
+flowchart LR
+    A["One document"] --> B["Split into 1,000 tiny chunks"]
+    B --> C["1 chunk per request"]
+    C --> D["1,000 HTTP requests"]
+    D --> E["Request burst"]
+    E --> F["RPM or call-rate pressure"]
+    F --> G["HTTP 429"]
+</div>
+
+Packing uses the embeddings API's input array to reduce client requests:
+
+$$
+\mathrm{HTTP\ requests}=\left\lceil\frac{N}{B}\right\rceil
+$$
+
+For 1,000 logical inputs packed 100 at a time:
+
+$$
+\left\lceil\frac{1{,}000}{100}\right\rceil=10\ \mathrm{HTTP\ requests}
+$$
+
+| Mode | Logical inputs | Client HTTP requests | Prompt tokens |
+|---|---:|---:|---:|
+| One input/request | 1,000 | 1,000 | Approximately unchanged |
+| 100-input arrays | 1,000 | 10 | Approximately unchanged |
+
+!!! important "What packing proves"
+    Packing proves lower **client HTTP request consumption**. The ADA Embedding
+    Model can still apply model-side call-rate accounting to logical inputs in
+    packed arrays. The workshop therefore measures service feedback instead of
+    assuming a 100× model-side RPM improvement.
+
+## Problem 2 — Large Chunks Consume TPM
+
+Now assume several documents produce larger chunks. The client might send only
+a few requests, but each request carries many tokens. Azure accumulates the
+estimated processed tokens against the deployment's assigned TPM. Once the
+token budget is exhausted, further requests can receive HTTP 429.
+
+<div class="mermaid">
+flowchart LR
+    A["Several documents"] --> B["Split into larger chunks"]
+    B --> C["Pack compatible chunks"]
+    C --> D["Few token-heavy requests"]
+    D --> E["Estimated tokens accumulate"]
+    E --> F["Assigned TPM reached"]
+    F --> G["HTTP 429"]
+</div>
+
+For example, ten requests containing 1,500 tokens each consume approximately:
+
+$$
+10\times1{,}500=15{,}000\ \mathrm{tokens}
+$$
+
+That is one minute of assigned capacity for a 15,000-TPM deployment, even
+though the client used only ten requests. Packing alone does not reduce these
+tokens. Token-aware ceilings shape each request, and optional pacing controls
+how quickly the requests are offered.
 
 ## Azure Embedding Request Limits
 
@@ -51,7 +146,7 @@ Azure assigns a model-specific RPM proportionally:
 
 $$
 \mathrm{assigned\ RPM}
-+=\frac{\mathrm{assigned\ TPM}}{1{,}000}\times r_{model}
+=\frac{\mathrm{assigned\ TPM}}{1{,}000}\times r_{model}
 $$
 
 Microsoft does not currently publish $r_{model}$ for the ADA Embedding Model. The approximately 900-RPM value in this project is empirical, not an Azure contract.
