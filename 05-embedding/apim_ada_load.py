@@ -11,7 +11,7 @@ import json
 import math
 import statistics
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,21 @@ class Target:
     name: str
     url: str
     headers: dict[str, str]
+
+
+@dataclass(frozen=True)
+class OptimizationRunPlan:
+    target: str
+    primary_tpm: int
+    secondary_tpm: int
+    assigned_tpm: int
+    capacity_source: str
+    target_utilization: float
+    target_tpm: int
+    requests_per_minute: float
+    max_batch_inputs: int
+    max_batch_tokens: int
+    tokenizer_model: str
 
 
 LOAD = LoadContract()
@@ -326,6 +341,7 @@ def run_rpm(
     batch_size: int,
     model: str,
     max_batch_tokens: int | None,
+    optimization_plan: OptimizationRunPlan,
 ) -> None:
     batches = rpm_requests(input_count, batch_size, model, max_batch_tokens)
     records = []
@@ -339,6 +355,7 @@ def run_rpm(
     report = {
         "mode": "rpm",
         "target": target.name,
+        "optimization_plan": asdict(optimization_plan),
         "logical_inputs": input_count,
         "batch_size": batch_size,
         "max_batch_tokens": max_batch_tokens,
@@ -369,6 +386,7 @@ def run_load(
     target_tpm: int,
     max_batch_tokens: int,
     model: str,
+    optimization_plan: OptimizationRunPlan,
 ) -> None:
     records = []
     sequence = 0
@@ -434,6 +452,7 @@ def run_load(
     report = {
         "mode": "tpm",
         "target": target.name,
+        "optimization_plan": asdict(optimization_plan),
         "configured_target_tpm": target_tpm,
         "max_batch_tokens": max_batch_tokens,
         "elapsed_seconds": round(elapsed, 3),
@@ -540,6 +559,27 @@ def main() -> None:
         target_tpm,
         requests_per_minute,
     )
+    capacity_source = (
+        "environment override"
+        if (
+            context.settings.primary_tpm_override is not None
+            or context.settings.secondary_tpm_override is not None
+        )
+        else "Azure deployment metadata"
+    )
+    optimization_plan = OptimizationRunPlan(
+        target=getattr(args, "target", "all"),
+        primary_tpm=context.capacity.primary_tpm,
+        secondary_tpm=context.capacity.secondary_tpm,
+        assigned_tpm=assigned_tpm,
+        capacity_source=capacity_source,
+        target_utilization=context.settings.target_utilization,
+        target_tpm=target_tpm,
+        requests_per_minute=requests_per_minute,
+        max_batch_inputs=getattr(args, "batch_size", LOAD.default_batch_size),
+        max_batch_tokens=max_batch_tokens,
+        tokenizer_model=POC.expected_model,
+    )
     if args.mode == "smoke":
         run_smoke(all_targets, args.output, args.inputs)
     elif args.mode == "rpm":
@@ -550,6 +590,7 @@ def main() -> None:
             args.batch_size,
             context.settings.deployment_name,
             max_batch_tokens,
+            optimization_plan,
         )
     else:
         run_load(
@@ -560,6 +601,7 @@ def main() -> None:
             target_tpm,
             max_batch_tokens,
             context.settings.deployment_name,
+            optimization_plan,
         )
 
 

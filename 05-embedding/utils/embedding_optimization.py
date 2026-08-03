@@ -25,6 +25,24 @@ class EmbeddingRequestFields:
 REQUEST = EmbeddingRequestFields()
 
 
+@dataclass(frozen=True)
+class OptimizationPlanFields:
+    target: str = "target"
+    primary_tpm: str = "primary_tpm"
+    secondary_tpm: str = "secondary_tpm"
+    assigned_tpm: str = "assigned_tpm"
+    capacity_source: str = "capacity_source"
+    target_utilization: str = "target_utilization"
+    target_tpm: str = "target_tpm"
+    requests_per_minute: str = "requests_per_minute"
+    max_batch_inputs: str = "max_batch_inputs"
+    max_batch_tokens: str = "max_batch_tokens"
+    tokenizer_model: str = "tokenizer_model"
+
+
+PLAN = OptimizationPlanFields()
+
+
 def embedding_request(
     input_ids: str | Iterable[str],
     texts: str | Iterable[str],

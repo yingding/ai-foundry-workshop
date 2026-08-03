@@ -7,7 +7,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from utils.embedding_optimization import percentile
+from utils.embedding_optimization import PLAN, percentile
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,7 @@ class SummaryFields:
     observed_tpm: str = "observed_tpm"
     steady_state_tpm: str = "steady_state_tpm"
     comparisons: str = "comparisons"
+    optimization_plan: str = "optimization_plan"
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,12 @@ class AnalysisOutputFields:
     classification: str = "classification"
     latency_ms: str = "latency_ms"
     p50: str = "p50"
+    optimization_scorecard: str = "optimization_scorecard"
+    item_capacity_fill_ratio: str = "item_capacity_fill_ratio"
+    estimated_token_fill_ratio: str = "estimated_token_fill_ratio"
+    actual_token_fill_ratio: str = "actual_token_fill_ratio"
+    logical_inputs_per_http_request: str = "logical_inputs_per_http_request"
+    steady_state_capacity_utilization: str = "steady_state_capacity_utilization"
 
 
 class ThrottleClassification(StrEnum):
@@ -324,6 +331,18 @@ def analyze_run(path: Path) -> dict[str, Any]:
     actual_batch_tokens = numeric_values(successful_records, FIELDS.prompt_tokens)
     estimated_total = sum(estimated_batch_tokens)
     actual_total = sum(actual_batch_tokens)
+    batch_inputs = numeric_values(successful_records, FIELDS.input_count)
+    optimization_plan = summary.get(SUMMARY.optimization_plan, {})
+    max_batch_tokens = numeric_value(
+        optimization_plan,
+        PLAN.max_batch_tokens,
+    )
+    max_batch_inputs = numeric_value(
+        optimization_plan,
+        PLAN.max_batch_inputs,
+    )
+    assigned_tpm = numeric_value(optimization_plan, PLAN.assigned_tpm)
+    steady_state_tpm = summary.get(SUMMARY.steady_state_tpm)
     return {
         "source": str(path),
         "mode": summary.get(SUMMARY.mode),
@@ -375,7 +394,45 @@ def analyze_run(path: Path) -> dict[str, Any]:
             SUMMARY.window_tpm,
             summary.get(SUMMARY.observed_tpm),
         ),
-        "steady_state_tpm": summary.get(SUMMARY.steady_state_tpm),
+        "steady_state_tpm": steady_state_tpm,
+        "optimization_plan": optimization_plan,
+        OUTPUT.optimization_scorecard: {
+            "inputs_per_request": {
+                "minimum": rounded(min(batch_inputs)) if batch_inputs else None,
+                "mean": rounded(statistics.fmean(batch_inputs)) if batch_inputs else None,
+                "p50": rounded(percentile(batch_inputs, 50)),
+                "p95": rounded(percentile(batch_inputs, 95)),
+                "maximum": rounded(max(batch_inputs)) if batch_inputs else None,
+            },
+            OUTPUT.item_capacity_fill_ratio: (
+                round(statistics.fmean(batch_inputs) / max_batch_inputs, 6)
+                if batch_inputs and max_batch_inputs
+                else None
+            ),
+            OUTPUT.estimated_token_fill_ratio: (
+                round(statistics.fmean(estimated_batch_tokens) / max_batch_tokens, 6)
+                if estimated_batch_tokens and max_batch_tokens
+                else None
+            ),
+            OUTPUT.actual_token_fill_ratio: (
+                round(statistics.fmean(actual_batch_tokens) / max_batch_tokens, 6)
+                if actual_batch_tokens and max_batch_tokens
+                else None
+            ),
+            OUTPUT.logical_inputs_per_http_request: (
+                round(
+                    sum(batch_inputs) / request_count,
+                    6,
+                )
+                if request_count and batch_inputs
+                else None
+            ),
+            OUTPUT.steady_state_capacity_utilization: (
+                round(float(steady_state_tpm) / assigned_tpm, 6)
+                if steady_state_tpm is not None and assigned_tpm
+                else None
+            ),
+        },
         "latency_ms": {
             "mean": rounded(statistics.fmean(durations)) if durations else None,
             "p50": rounded(percentile(durations, 50)),
@@ -444,6 +501,7 @@ def render_markdown(runs: list[dict[str, Any]]) -> str:
         throttles = run["throttle_analysis"]
         rate_limits = run["rate_limit_evidence"]
         batch_tokens = run["batch_tokens"]
+        scorecard = run[OUTPUT.optimization_scorecard]
         lines.extend(
             [
                 f"## {Path(run['source']).name}",
@@ -455,6 +513,8 @@ def render_markdown(runs: list[dict[str, Any]]) -> str:
                 f"- Throttle classification: `{json.dumps(throttles['counts'], sort_keys=True)}`",
                 f"- Rate-limit headers: `{json.dumps(rate_limits['observed'], sort_keys=True)}`",
                 f"- Batch token sizes: `{json.dumps(batch_tokens, sort_keys=True)}`",
+                f"- Optimization plan: `{json.dumps(run['optimization_plan'], sort_keys=True)}`",
+                f"- Optimization scorecard: `{json.dumps(scorecard, sort_keys=True)}`",
                 "",
             ]
         )

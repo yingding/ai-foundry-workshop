@@ -33,6 +33,7 @@ from dotenv import load_dotenv
 from network_setup import configure_private_network
 from permissions_setup import configure_permissions
 from utils.fdyauth import AuthHelper
+from utils.aml_metrics import DEFAULT_METRIC_PREFIX, METRICS, MetricLoggingMode
 from utils.embedding_optimization import percentile
 
 ROOT = Path(__file__).resolve().parent
@@ -92,6 +93,9 @@ class BatchDefaults:
     max_tokens_per_request: int = 0
     max_retries: int = 8
     request_concurrency: int = 1
+    metric_logging: MetricLoggingMode = MetricLoggingMode.MLFLOW
+    local_metric_logging: MetricLoggingMode = MetricLoggingMode.DISABLED
+    metric_prefix: str = DEFAULT_METRIC_PREFIX
     max_repeat_inputs: int = 100
     compute_size: str = "Standard_DS3_v2"
     compute_max_instances: int = 2
@@ -107,6 +111,8 @@ class PipelineFields:
     max_tokens_per_request: str = "max_tokens_per_request"
     max_retries: str = "max_retries"
     request_concurrency: str = "request_concurrency"
+    metric_logging: str = "metric_logging"
+    metric_prefix: str = "metric_prefix"
     embeddings: str = "embeddings"
 
 
@@ -269,9 +275,16 @@ def print_plan(settings: Settings) -> None:
     print(f"  account:    {settings.foundry_account}")
     print(f"  project:    {settings.foundry_project}")
     for model_key in MODEL_KEYS:
+        route = (
+            "APIM pooled"
+            if model_key == ModelKey.ADA_APIM
+            else "Foundry direct"
+        )
         print(
-            f"  {model_key}:      {settings.openai_deployments[model_key]} "
-            f"({settings.openai_models[model_key]}:{settings.openai_model_versions[model_key]})"
+            f"  {model_key}:      {route} -> "
+            f"{settings.openai_endpoints[model_key]} "
+            f"[{settings.openai_deployments[model_key]} / "
+            f"{settings.openai_models[model_key]}:{settings.openai_model_versions[model_key]}]"
         )
     print("Shared AML batch endpoint:")
     print(f"  workspace:  {settings.aml_workspace}")
@@ -367,6 +380,8 @@ def create_pipeline_component(
             f"--deployment {settings.openai_deployments[model_key]} "
             f"--model {settings.openai_models[model_key]} "
             f"--token-scope {settings.token_scopes[model_key]} "
+            "--metric-logging ${{inputs.metric_logging}} "
+            "--metric-prefix ${{inputs.metric_prefix}} "
             "--packing ${{inputs.packing}} "
             "--max-inputs-per-request ${{inputs.max_inputs_per_request}} "
             "--max-tokens-per-request ${{inputs.max_tokens_per_request}} "
@@ -375,7 +390,10 @@ def create_pipeline_component(
         ),
         inputs={
             FIELDS.documents: Input(type=AssetTypes.URI_FOLDER),
-            FIELDS.packing: Input(type="string", default=DEFAULTS.packing),
+            FIELDS.packing: Input(
+                type="string",
+                default=DEFAULTS.packing.value,
+            ),
             FIELDS.max_inputs_per_request: Input(
                 type="integer",
                 default=DEFAULTS.max_inputs_per_request,
@@ -392,6 +410,14 @@ def create_pipeline_component(
                 type="integer",
                 default=DEFAULTS.request_concurrency,
             ),
+            FIELDS.metric_logging: Input(
+                type="string",
+                default=DEFAULTS.metric_logging.value,
+            ),
+            FIELDS.metric_prefix: Input(
+                type="string",
+                default=DEFAULTS.metric_prefix,
+            ),
         },
         outputs={FIELDS.embeddings: Output(type=AssetTypes.URI_FOLDER)},
         environment=environment,
@@ -401,11 +427,13 @@ def create_pipeline_component(
     @dsl.pipeline(name=f"batch_embedding_pipeline_{model_slug}")
     def pipeline(
         documents: Input,
-        packing: str = DEFAULTS.packing,
+        packing: str = DEFAULTS.packing.value,
         max_inputs_per_request: int = DEFAULTS.max_inputs_per_request,
         max_tokens_per_request: int = default_max_tokens_per_request,
         max_retries: int = DEFAULTS.max_retries,
         request_concurrency: int = DEFAULTS.request_concurrency,
+        metric_logging: str = DEFAULTS.metric_logging.value,
+        metric_prefix: str = DEFAULTS.metric_prefix,
     ):
         step = embed(
             documents=documents,
@@ -414,16 +442,20 @@ def create_pipeline_component(
             max_tokens_per_request=max_tokens_per_request,
             max_retries=max_retries,
             request_concurrency=request_concurrency,
+            metric_logging=metric_logging,
+            metric_prefix=metric_prefix,
         )
         return {FIELDS.embeddings: step.outputs.embeddings}
 
     return pipeline(
         documents=Input(type=AssetTypes.URI_FOLDER),
-        packing=DEFAULTS.packing,
+        packing=DEFAULTS.packing.value,
         max_inputs_per_request=DEFAULTS.max_inputs_per_request,
         max_tokens_per_request=default_max_tokens_per_request,
         max_retries=DEFAULTS.max_retries,
         request_concurrency=DEFAULTS.request_concurrency,
+        metric_logging=DEFAULTS.metric_logging.value,
+        metric_prefix=DEFAULTS.metric_prefix,
     ).component
 
 
@@ -443,6 +475,10 @@ def ensure_batch_endpoint(
         shutil.copy2(
             ROOT / "utils" / "embedding_optimization.py",
             stage / "utils" / "embedding_optimization.py",
+        )
+        shutil.copy2(
+            ROOT / "utils" / "aml_metrics.py",
+            stage / "utils" / "aml_metrics.py",
         )
         try:
             endpoint = ml_client.batch_endpoints.get(settings.endpoint_name)
@@ -476,9 +512,10 @@ def ensure_batch_endpoint(
             ml_client.batch_deployments.begin_create_or_update(deployment).result()
             print(
                 f"Ready: batch deployment {model_key} -> "
-                f"{settings.openai_deployments[model_key]}"
+                f"{'APIM pooled' if model_key == ModelKey.ADA_APIM else 'Foundry direct'} "
+                f"({settings.openai_endpoints[model_key]})"
             )
-        print("Ready: minimal component code uploaded (4 files)")
+        print("Ready: minimal component code uploaded (5 files)")
         if not endpoint.defaults.deployment_name:
             endpoint.defaults.deployment_name = settings.batch_deployments[ModelKey.SMALL]
             ml_client.batch_endpoints.begin_create_or_update(endpoint).result()
@@ -619,6 +656,29 @@ def print_output_summary(ml_client: MLClient, job_name: str) -> None:
         print(f"  online requests: {attributes['embedding.online_request_count']}")
         print(f"  duration ms:     {duration_ms}")
         print(f"  failed requests: {attributes['embedding.failed_count']}")
+        run_metrics = {
+            name.removeprefix("metric."): value
+            for name, value in attributes.items()
+            if name.startswith("metric.")
+        }
+        if run_metrics:
+            print(f"  attempted RPM:   {run_metrics[METRICS.attempted_rpm]:.3f}")
+            print(f"  successful RPM:  {run_metrics[METRICS.successful_rpm]:.3f}")
+            print(f"  accepted TPM:    {run_metrics[METRICS.accepted_tpm]:.3f}")
+            print(f"  success rate:    {run_metrics[METRICS.success_rate]:.3%}")
+            print(f"  throttle rate:   {run_metrics[METRICS.throttle_rate]:.3%}")
+            print(
+                f"  token fill:      "
+                f"{run_metrics[METRICS.token_ceiling_fill_ratio]:.3%}"
+            )
+            print(
+                f"  item fill:       "
+                f"{run_metrics[METRICS.item_ceiling_fill_ratio]:.3%}"
+            )
+            print(
+                f"  token estimate:  "
+                f"{run_metrics[METRICS.estimated_to_actual_token_ratio]:.6f}"
+            )
         if request_durations:
             print(f"  latency p50 ms:  {percentile(request_durations, 50):.3f}")
             print(f"  latency p95 ms:  {percentile(request_durations, 95):.3f}")
@@ -739,6 +799,8 @@ def invoke(
     max_retries: int,
     request_concurrency: int,
     repeat_inputs: int,
+    metric_logging: str,
+    metric_prefix: str,
 ) -> None:
     if repeat_inputs < 1 or repeat_inputs > DEFAULTS.max_repeat_inputs:
         raise ValueError(
@@ -807,6 +869,14 @@ def invoke(
                 FIELDS.request_concurrency: Input(
                     type="integer", default=request_concurrency
                 ),
+                FIELDS.metric_logging: Input(
+                    type="string",
+                    default=metric_logging,
+                ),
+                FIELDS.metric_prefix: Input(
+                    type="string",
+                    default=metric_prefix,
+                ),
             },
         )
         print(f"Experiment: {experiment}")
@@ -815,7 +885,8 @@ def invoke(
             f"Submitted job ID: {job.name} "
             f"({model_key} -> {settings.openai_deployments[model_key]}, "
             f"packing={packing}, repeats={repeat_inputs}, max_retries={max_retries}, "
-            f"concurrency={request_concurrency})"
+            f"concurrency={request_concurrency}, metrics={metric_logging}, "
+            f"metric_prefix={metric_prefix})"
         )
         monitor(settings, job.name)
 
@@ -900,6 +971,8 @@ def test_local(
     max_tokens_per_request: int,
     max_retries: int,
     request_concurrency: int,
+    metric_logging: str,
+    metric_prefix: str,
 ) -> None:
     from component.embed import run
 
@@ -915,6 +988,8 @@ def test_local(
         max_retries=max_retries,
         request_concurrency=request_concurrency,
         dry_run=True,
+        metric_logging=metric_logging,
+        metric_prefix=metric_prefix,
     )
 
 
@@ -968,6 +1043,12 @@ def main() -> None:
         type=int,
         default=DEFAULTS.request_concurrency,
     )
+    test_parser.add_argument(
+        "--metric-logging",
+        choices=tuple(MetricLoggingMode),
+        default=DEFAULTS.local_metric_logging,
+    )
+    test_parser.add_argument("--metric-prefix", default=DEFAULTS.metric_prefix)
     invoke_parser = subparsers.add_parser("invoke", help="Submit an AML batch job")
     invoke_parser.add_argument("--input", type=Path, default=ROOT / "data")
     invoke_parser.add_argument("--model", choices=MODEL_KEYS, required=True)
@@ -996,6 +1077,12 @@ def main() -> None:
         default=DEFAULTS.request_concurrency,
     )
     invoke_parser.add_argument("--repeat-inputs", type=int, default=1)
+    invoke_parser.add_argument(
+        "--metric-logging",
+        choices=tuple(MetricLoggingMode),
+        default=DEFAULTS.metric_logging,
+    )
+    invoke_parser.add_argument("--metric-prefix", default=DEFAULTS.metric_prefix)
     monitor_parser = subparsers.add_parser("monitor", help="Stream a queued/running job and show child status")
     monitor_parser.add_argument("job_name")
     download_parser = subparsers.add_parser("download", help="Download a completed job output")
@@ -1027,6 +1114,8 @@ def main() -> None:
             args.max_tokens_per_request,
             args.max_retries,
             args.request_concurrency,
+            args.metric_logging,
+            args.metric_prefix,
         )
     elif args.command == "invoke":
         invoke(
@@ -1039,6 +1128,8 @@ def main() -> None:
             args.max_retries,
             args.request_concurrency,
             args.repeat_inputs,
+            args.metric_logging,
+            args.metric_prefix,
         )
     elif args.command == "monitor":
         monitor(settings, args.job_name)

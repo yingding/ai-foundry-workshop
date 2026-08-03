@@ -12,8 +12,8 @@ and chunking rules.
 See [TPM optimization plan](tpm-optimization.md) when measured demand exceeds
 the token capacity assigned to the deployment.
 
-This is a design and validation plan. It does not describe implemented pacing or
-token-aware batching unless those capabilities are added later.
+This is both a design record and an implemented validation plan. Token-aware
+packing is implemented in `utils/embedding_optimization.py` with `tiktoken`.
 
 ## Measured baseline
 
@@ -71,16 +71,16 @@ consumption by 99% while processing approximately the same input tokens.
 
 ## 2. Size batches by tokens
 
-The current item-count limit protects request size, but equal item counts do not
-imply equal token counts. A future token-aware batcher should stop a batch when
-either limit is reached:
+The item-count limit protects request size, but equal item counts do not imply
+equal token counts. The implemented packer stops a batch when either limit is
+reached:
 
 - maximum inputs per request;
 - target estimated tokens per request.
 
-The target should be derived from assigned TPM rather than the service's maximum
-request size. For deployment TPM $T$, utilization target $u$, and planned HTTP
-requests per minute $R$:
+The target is derived from assigned TPM rather than the service's maximum request
+size. For deployment TPM $T$, utilization target $u$, and planned HTTP requests
+per minute $R$:
 
 $$
 \mathrm{target\ tokens\ per\ request}=\frac{T\cdot u}{R}
@@ -97,8 +97,8 @@ request. That makes 100 inputs, or about 1,200 tokens, a reasonable initial
 batch target for this fixture. Production data must be measured because input
 lengths can differ substantially.
 
-The batching algorithm should preserve input order within each settings group,
-start a new array before the token target is exceeded, and always enforce the
+The batching algorithm preserves input order within each settings group, starts
+a new array before the token target is exceeded, and always enforces the
 published embedding endpoint limits of 2,048 inputs and 300,000 aggregate input
 tokens per request.
 
@@ -194,6 +194,56 @@ reporting 100 inputs per request and a 99% request reduction with no HTTP 429.
 This proves request reduction, not token reduction: the packed request still
 consumed the tokens for all 100 inputs.
 
+With automatic capacity-aware sizing enabled, Azure metadata reported two
+15,000-TPM backends. At 80% utilization and 20 planned requests/minute, the
+derived token ceiling was 1,200 tokens/request. The same 100 logical inputs then
+formed two requests: 85 inputs/1,190 tokens and 15 inputs/210 tokens. Estimated
+and service-reported prompt tokens matched exactly at 1,400 total. Request use
+was still reduced by 98% compared with one input per request.
+
+The smaller final batch is expected. A greedy ordered packer fills each request
+up to the item or token ceiling and emits the remainder as the final request.
+Report p50/p95/max token size and item count rather than judging optimization
+from the final batch alone.
+
 The selected operating point must come from repeated measurements. The current
 100-input and 1,200-token values are baseline candidates derived from this
 sample, not universal embedding settings.
+
+## AML child-step metrics
+
+The embedding command component can publish run-level scalars to the AML child
+job through MLflow. Publishing is controlled per invocation:
+
+- `metric_logging=mlflow` publishes metrics to the child job's **Metrics** tab;
+- `metric_logging=disabled` suppresses MLflow publishing;
+- `metric_prefix` namespaces metric names for dashboards and comparisons.
+
+Structured `trace.jsonl` output remains enabled in both modes. Disabling MLflow
+therefore changes portal visibility, not the auditable request record.
+
+The default child-step metric set is intentionally bounded:
+
+| Group | Metrics | Purpose |
+| --- | --- | --- |
+| Throughput | attempted RPM, successful RPM, accepted TPM, attempted/successful input totals, successful logical inputs/minute | Compare useful work and online endpoint consumption without counting rejected batches |
+| Reliability | success rate, failed requests, HTTP 429 count/rate | Detect overdriving and partial runs |
+| Latency | request p50/p95/p99 | Detect queueing and oversized requests |
+| Packing | inputs/request, actual tokens/request, token/item ceiling fill, estimate/actual ratio | Explain why RPM or TPM is controlling |
+| Context | request-window seconds, request/input/token totals | Prevent short bursts from being read as sustained throughput |
+
+RPM and TPM are observed rates over the online request window from the first
+request start to the last request completion. They exclude AML queue,
+environment preparation, and input download time. For concurrent short jobs,
+these are burst-window metrics and can exceed assigned per-minute capacity;
+only repeated long-window jobs support sustained-capacity claims.
+
+Only successful service-reported `prompt_tokens` contribute to accepted TPM.
+Attempted RPM includes failed requests, while successful RPM does not. This
+separation makes HTTP 429 pressure visible instead of hiding it behind a single
+request-rate value.
+
+Rate-limit header values and individual request events remain in `trace.jsonl`
+rather than AML scalar metrics. They are snapshots with request-level context,
+not stable run aggregates, and publishing each value would create a noisy metric
+surface.

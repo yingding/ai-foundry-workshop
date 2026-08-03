@@ -5,6 +5,8 @@ dependencies:
   - pip
   - pip:
       - azure-identity>=1.25.0,<2.0.0
+      - azureml-mlflow>=1.62.0,<2.0.0
+      - mlflow>=3.7.0,<4.0.0
       - openai>=2.0.0,<3.0.0
       - opentelemetry-sdk>=1.40.0,<2.0.0
       - pydantic-settings>=2.12.0,<3.0.0

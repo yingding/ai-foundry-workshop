@@ -34,6 +34,7 @@ from apim_ada_poc import POC, api_policy
 from apim_ada_load import LOAD, cosine_similarity, retry_after_seconds, targets
 from permissions_setup import RbacRole, RequiredAssignment, ensure_assignment
 from utils.embedding_optimization import (
+    PLAN,
     REQUEST,
     capacity_units_to_tpm,
     embedding_request,
@@ -44,6 +45,12 @@ from utils.embedding_optimization import (
     token_counter_for_model,
     tokens_per_minute,
     utilization_target_tpm,
+)
+from utils.aml_metrics import (
+    METRICS,
+    RequestMeasurement,
+    calculate_run_metrics,
+    publish_run_metrics,
 )
 
 
@@ -246,6 +253,70 @@ class OptimizationUtilityTests(unittest.TestCase):
         self.assertEqual(aggregate_tpm, 30000)
         self.assertEqual(target_tpm, 24000)
         self.assertEqual(target_tokens_per_request(target_tpm, 20), 1200)
+        self.assertEqual(PLAN.assigned_tpm, "assigned_tpm")
+        self.assertEqual(PLAN.max_batch_tokens, "max_batch_tokens")
+
+
+class AmlMetricTests(unittest.TestCase):
+    def test_run_metrics_separate_attempts_success_and_throttling(self) -> None:
+        metrics = calculate_run_metrics(
+            [
+                RequestMeasurement(0.0, 2.0, 80, 1000, 1000, 200),
+                RequestMeasurement(2.0, 4.0, 20, 400, 0, 429),
+            ],
+            max_inputs_per_request=100,
+            max_tokens_per_request=1200,
+        )
+
+        self.assertEqual(metrics[METRICS.attempted_rpm], 30.0)
+        self.assertEqual(metrics[METRICS.successful_rpm], 15.0)
+        self.assertEqual(metrics[METRICS.accepted_tpm], 15000.0)
+        self.assertEqual(metrics[METRICS.success_rate], 0.5)
+        self.assertEqual(metrics[METRICS.throttle_rate], 0.5)
+        self.assertEqual(metrics[METRICS.attempted_logical_inputs], 100.0)
+        self.assertEqual(metrics[METRICS.successful_logical_inputs], 80.0)
+        self.assertEqual(metrics[METRICS.logical_inputs_per_minute], 1200.0)
+        self.assertEqual(metrics[METRICS.inputs_per_request], 50.0)
+        self.assertEqual(metrics[METRICS.token_ceiling_fill_ratio], 1_000 / 1_200)
+        self.assertEqual(metrics[METRICS.item_ceiling_fill_ratio], 0.5)
+        self.assertEqual(metrics[METRICS.estimated_to_actual_token_ratio], 1.0)
+        self.assertEqual(metrics[METRICS.request_latency_p95_ms], 2000.0)
+
+    def test_metric_publishing_is_namespaced_and_configurable(self) -> None:
+        logger = Mock()
+        metrics = {METRICS.attempted_rpm: 20.0, METRICS.accepted_tpm: 14_000.0}
+
+        published = publish_run_metrics(
+            metrics,
+            "mlflow",
+            "ada_batch",
+            logger=logger,
+        )
+
+        self.assertEqual(
+            published,
+            {
+                "ada_batch.attempted_rpm": 20.0,
+                "ada_batch.accepted_tpm": 14_000.0,
+            },
+        )
+        logger.log_metrics.assert_called_once_with(published)
+
+        logger.reset_mock()
+        self.assertEqual(
+            publish_run_metrics(metrics, "disabled", logger=logger),
+            {},
+        )
+        logger.log_metrics.assert_not_called()
+
+    def test_metric_prefix_rejects_unsafe_names(self) -> None:
+        with self.assertRaisesRegex(ValueError, "metric_prefix"):
+            publish_run_metrics(
+                {METRICS.attempted_rpm: 20.0},
+                "mlflow",
+                "invalid prefix",
+                logger=Mock(),
+            )
 
 
 class AnalyzerContractTests(unittest.TestCase):
@@ -278,13 +349,31 @@ class AnalyzerContractTests(unittest.TestCase):
                     {
                         ANALYSIS_SUMMARY.mode: "load",
                         ANALYSIS_SUMMARY.target: LOAD.primary_target,
+                        ANALYSIS_SUMMARY.steady_state_tpm: 800,
+                        ANALYSIS_SUMMARY.optimization_plan: {
+                            PLAN.assigned_tpm: 1000,
+                            PLAN.max_batch_inputs: 4,
+                            PLAN.max_batch_tokens: 100,
+                        },
                     }
                 ),
                 encoding="utf-8",
             )
             records = (
-                {ANALYSIS_FIELDS.status_code: 200, ANALYSIS_FIELDS.duration_ms: 10, REQUEST.input_count: 1},
-                {ANALYSIS_FIELDS.status_code: 200, ANALYSIS_FIELDS.duration_ms: 20, REQUEST.input_count: 1},
+                {
+                    ANALYSIS_FIELDS.status_code: 200,
+                    ANALYSIS_FIELDS.duration_ms: 10,
+                    REQUEST.input_count: 4,
+                    ANALYSIS_FIELDS.estimated_tokens: 80,
+                    ANALYSIS_FIELDS.prompt_tokens: 80,
+                },
+                {
+                    ANALYSIS_FIELDS.status_code: 200,
+                    ANALYSIS_FIELDS.duration_ms: 20,
+                    REQUEST.input_count: 2,
+                    ANALYSIS_FIELDS.estimated_tokens: 40,
+                    ANALYSIS_FIELDS.prompt_tokens: 40,
+                },
                 {ANALYSIS_FIELDS.status_code: 429, ANALYSIS_FIELDS.duration_ms: 1000, REQUEST.input_count: 1},
             )
             write_jsonl(run_dir / "requests.jsonl", records)
@@ -294,6 +383,27 @@ class AnalyzerContractTests(unittest.TestCase):
             self.assertEqual(
                 analysis[ANALYSIS_OUTPUT.latency_ms][ANALYSIS_OUTPUT.p50],
                 15.0,
+            )
+            scorecard = analysis[ANALYSIS_OUTPUT.optimization_scorecard]
+            self.assertEqual(
+                scorecard[ANALYSIS_OUTPUT.item_capacity_fill_ratio],
+                0.75,
+            )
+            self.assertEqual(
+                scorecard[ANALYSIS_OUTPUT.estimated_token_fill_ratio],
+                0.6,
+            )
+            self.assertEqual(
+                scorecard[ANALYSIS_OUTPUT.actual_token_fill_ratio],
+                0.6,
+            )
+            self.assertEqual(
+                scorecard[ANALYSIS_OUTPUT.logical_inputs_per_http_request],
+                2.0,
+            )
+            self.assertEqual(
+                scorecard[ANALYSIS_OUTPUT.steady_state_capacity_utilization],
+                0.8,
             )
 
 

@@ -339,7 +339,7 @@ def single_backend(account_name: str, region: str) -> dict:
 def pool_backend(context: Context) -> dict:
     return {
         "properties": {
-            "description": "Equal-capacity ADA v2 regional proof-of-concept pool",
+            "description": "Capacity-weighted ADA v2 regional proof-of-concept pool",
             "type": "Pool",
             "pool": {
                 "services": [

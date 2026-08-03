@@ -150,6 +150,9 @@ only. These variables select resources and API behavior:
 | `APIM_ADA_SECONDARY_ACCOUNT` | Second independently allocated backend | APIM OpenAI User assignment scope |
 | `APIM_ADA_API_VERSION` | Backend request API version | Request contract only |
 | `APIM_AML_ENDPOINT` | AML-facing APIM API base URL | Trusted endpoint receiving the compute Entra token |
+| `APIM_ADA_PRIMARY_TPM`, `APIM_ADA_SECONDARY_TPM` | Optional assigned-TPM overrides | Omit to discover deployment capacity from Azure |
+| `APIM_ADA_TARGET_UTILIZATION` | Fraction of assigned TPM used as the operating target | Controls headroom, not quota allocation |
+| `APIM_ADA_REQUESTS_PER_MINUTE` | Planned paced request cadence | Combines with target TPM to derive tokens/request |
 
 Primary and secondary are routing roles, not fixed Azure regions. The
 provisioner discovers each account's actual region and can use a different

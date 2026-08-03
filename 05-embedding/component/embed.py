@@ -24,6 +24,13 @@ from opentelemetry.sdk.trace.export import (
 )
 
 from utils.fdyauth import AuthHelper
+from utils.aml_metrics import (
+    DEFAULT_METRIC_PREFIX,
+    MetricLoggingMode,
+    RequestMeasurement,
+    calculate_run_metrics,
+    publish_run_metrics,
+)
 from utils.embedding_optimization import pack_compatible_requests, token_counter_for_model
 
 
@@ -81,6 +88,9 @@ class TraceContract:
     max_retries: str = "embedding.max_retries"
     request_concurrency: str = "embedding.request_concurrency"
     token_scope: str = "embedding.token_scope"
+    metric_logging: str = "embedding.metric_logging"
+    metric_prefix: str = "embedding.metric_prefix"
+    metric_logging_error: str = "embedding.metric_logging_error"
     source_line_count: str = "embedding.source_line_count"
     online_request_count: str = "embedding.online_request_count"
     embedding_input_count: str = "embedding.input_count"
@@ -333,6 +343,8 @@ def run(
     request_concurrency: int = DEFAULTS.request_concurrency,
     token_scope: str = DEFAULTS.token_scope,
     dry_run: bool = False,
+    metric_logging: str = MetricLoggingMode.DISABLED,
+    metric_prefix: str = DEFAULT_METRIC_PREFIX,
 ) -> None:
     if max_inputs_per_request < 1 or max_inputs_per_request > LIMITS.max_array_inputs:
         raise ValueError(
@@ -351,6 +363,12 @@ def run(
             "request_concurrency must be between 1 and "
             f"{LIMITS.max_request_concurrency}"
         )
+    try:
+        selected_metric_logging = MetricLoggingMode(metric_logging)
+    except ValueError as error:
+        raise ValueError(
+            f"metric_logging must be one of: {', '.join(MetricLoggingMode)}"
+        ) from error
     output_dir.mkdir(parents=True, exist_ok=True)
     provider = configure_tracing(output_dir)
     tracer = trace.get_tracer(__name__)
@@ -374,6 +392,8 @@ def run(
     embedding_input_count = 0
     failed_count = 0
     first_request_error: Exception | None = None
+    request_measurements: list[RequestMeasurement] = []
+    measurement_lock = threading.Lock()
     started = time.perf_counter()
     with tracer.start_as_current_span(TRACE.root_span) as root_span:
         root_span.set_attribute(TRACE.deployment, deployment)
@@ -385,6 +405,8 @@ def run(
         root_span.set_attribute(TRACE.max_retries, max_retries)
         root_span.set_attribute(TRACE.request_concurrency, request_concurrency)
         root_span.set_attribute(TRACE.token_scope, token_scope)
+        root_span.set_attribute(TRACE.metric_logging, selected_metric_logging)
+        root_span.set_attribute(TRACE.metric_prefix, metric_prefix)
         with output_path.open("w", encoding="utf-8") as output:
             input_requests = list(read_requests(input_dir, model))
             source_line_count = len(input_requests)
@@ -410,6 +432,8 @@ def run(
                 with trace.use_span(root_span, end_on_exit=False):
                     with tracer.start_as_current_span(TRACE.request_span) as span:
                         request_started = time.perf_counter()
+                        request_status_code: int | None = None
+                        request_prompt_tokens = 0
                         span.set_attribute(
                             TRACE.request_start_offset_ms,
                             round((request_started - started) * 1000, 3),
@@ -451,6 +475,13 @@ def run(
                                     )
                                 ),
                             )
+                            request_prompt_tokens = int(
+                                response_body.get(RESPONSE.usage, {}).get(
+                                    RESPONSE.prompt_tokens,
+                                    0,
+                                )
+                            )
+                            request_status_code = 200
                             span.set_attribute(TRACE.http_status_code, 200)
                             response_items = sorted(
                                 response_body[RESPONSE.data],
@@ -483,6 +514,7 @@ def run(
                             status_code = getattr(error, "status_code", None)
                             if status_code is not None:
                                 span.set_attribute(TRACE.http_status_code, status_code)
+                                request_status_code = int(status_code)
                             if response is not None:
                                 retry_after_ms = response.headers.get(
                                     RATE_LIMIT.retry_after_ms
@@ -506,10 +538,25 @@ def run(
                                 "_exception": error,
                             }
                         finally:
+                            request_completed = time.perf_counter()
                             span.set_attribute(
                                 TRACE.request_duration_ms,
-                                round((time.perf_counter() - request_started) * 1000, 3),
+                                round((request_completed - request_started) * 1000, 3),
                             )
+                            with measurement_lock:
+                                request_measurements.append(
+                                    RequestMeasurement(
+                                        started_seconds=request_started,
+                                        completed_seconds=request_completed,
+                                        input_count=request[REQUEST.input_count],
+                                        estimated_tokens=request.get(
+                                            REQUEST.estimated_tokens,
+                                            0,
+                                        ),
+                                        prompt_tokens=request_prompt_tokens,
+                                        status_code=request_status_code,
+                                    )
+                                )
 
             with ThreadPoolExecutor(max_workers=request_concurrency) as executor:
                 futures = [
@@ -532,6 +579,28 @@ def run(
         root_span.set_attribute(TRACE.online_request_count, online_request_count)
         root_span.set_attribute(TRACE.embedding_input_count, embedding_input_count)
         root_span.set_attribute(TRACE.failed_count, failed_count)
+        run_metrics = calculate_run_metrics(
+            request_measurements,
+            max_inputs_per_request=max_inputs_per_request,
+            max_tokens_per_request=max_tokens_per_request,
+        )
+        for name, value in run_metrics.items():
+            root_span.set_attribute(f"metric.{name}", value)
+        try:
+            published_metrics = publish_run_metrics(
+                run_metrics,
+                selected_metric_logging,
+                metric_prefix,
+            )
+            if published_metrics:
+                print(
+                    f"Published {len(published_metrics)} MLflow metrics with "
+                    f"prefix {metric_prefix!r}"
+                )
+        except Exception as error:
+            message = f"MLflow metric publishing failed: {error}"
+            root_span.set_attribute(TRACE.metric_logging_error, message)
+            print(f"WARNING: {message}", file=sys.stderr)
         root_span.set_attribute(
             TRACE.duration_ms,
             round((time.perf_counter() - started) * 1000, 3),
@@ -589,6 +658,12 @@ def main() -> None:
         default=DEFAULTS.token_scope,
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--metric-logging",
+        choices=tuple(MetricLoggingMode),
+        default=MetricLoggingMode.DISABLED,
+    )
+    parser.add_argument("--metric-prefix", default=DEFAULT_METRIC_PREFIX)
     args = parser.parse_args()
     run(
         args.input_dir,
@@ -603,6 +678,8 @@ def main() -> None:
         args.request_concurrency,
         args.token_scope,
         args.dry_run,
+        args.metric_logging,
+        args.metric_prefix,
     )
 
 

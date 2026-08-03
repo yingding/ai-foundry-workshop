@@ -140,6 +140,20 @@ AML and APIM experiments, then supplies pacing and TPM normalization to the load
 runner. The combined sequence is therefore **pack for RPM, route for aggregate
 TPM, pace below the aggregate boundary**.
 
+The APIM provisioner reads each Foundry deployment's SKU capacity through the
+Azure management SDK and converts capacity units to assigned TPM. It then:
+
+1. sums independently allocated backend TPM;
+2. derives proportional APIM weights;
+3. applies the configured utilization target;
+4. divides target TPM by planned requests/minute to obtain the token ceiling.
+
+For the current 15K + 15K pool, defaults produce 30,000 assigned TPM, a 24,000
+TPM target, 20 requests/minute, and 1,200 target tokens/request. Optional
+`APIM_ADA_PRIMARY_TPM` and `APIM_ADA_SECONDARY_TPM` values override delayed or
+unavailable metadata. `APIM_ADA_TARGET_UTILIZATION` and
+`APIM_ADA_REQUESTS_PER_MINUTE` tune policy rather than resource allocation.
+
 Recommended APIM capabilities:
 
 - backend pool containing the regional embedding endpoints;

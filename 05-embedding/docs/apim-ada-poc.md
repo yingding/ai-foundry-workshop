@@ -289,6 +289,25 @@ trip duration and that APIM can return HTTP 503 while the backend is
 unavailable. In this load-balanced pool, subsequent requests can use another
 eligible member. If no member is eligible, the gateway returns 503.
 
+The `ada` and `ada-apim` routes intentionally share the Foundry deployment name
+`text-embedding-ada-002-test`; the deployment name identifies the model path,
+not the transport. `ada` uses the direct Foundry base URL. `ada-apim` uses the
+AML-facing APIM base URL plus `/deployments/text-embedding-ada-002-test` and the
+Cognitive Services token scope. The CLI plan now prints the route and full
+endpoint so this distinction is visible before invocation.
+
+Live child run `752ce3eb-12c4-4759-bc44-ff061af96f66` verified both paths of
+evidence:
+
+- execution logs recorded the APIM endpoint ending in
+  `/ada-embeddings-aml/deployments/text-embedding-ada-002-test`;
+- AML persisted 21 `ada_apim_batch.*` MLflow metrics on the child run;
+- one packed request processed 100 inputs and 1,030 prompt tokens with HTTP 200;
+- the burst-window report showed 24.850 attempted/successful RPM, 25,595.218
+  accepted TPM, 85.833% token-ceiling fill, and zero throttling.
+
+These rates describe a 2.415-second single-request burst and are not a sustained
+capacity result. Use longer paced jobs for quota conclusions.
 The threshold is based on responses observed by APIM, not the backend's current
 TPM counter. One or two 429 responses do not open this configured circuit. The
 third qualifying response within the 30-second interval can trip it.
@@ -562,6 +581,86 @@ Interpret the remaining metrics as follows:
 | p50 latency | Typical request cost |
 | p95/p99 latency | Tail cost from regional distance, queueing, or throttling |
 | backend share | Evidence that both independent allocations are actually used |
+
+### Token-size optimization report
+
+Every new RPM or TPM summary contains an `optimization_plan` with:
+
+- primary, secondary, and target-assigned TPM;
+- whether capacity came from Azure metadata or an environment override;
+- utilization target and target TPM;
+- planned requests/minute;
+- maximum inputs and tokens per request;
+- tokenizer model.
+
+Every request record contains `input_count`, `estimated_tokens`, actual
+`prompt_tokens`, status, latency, retry guidance, and available rate-limit
+headers. The analyzer adds:
+
+| Report value | Interpretation |
+| --- | --- |
+| Inputs/request min, mean, p50, p95, max | Whether item count or token size controls packing |
+| Estimated/actual token distributions | Batch shape and service-accounted work |
+| Estimate-to-actual ratio | Tokenizer accuracy; values near 1 are desirable |
+| Item-capacity fill | Mean items divided by configured item ceiling |
+| Token-capacity fill | Mean tokens divided by configured token ceiling |
+| Logical inputs/HTTP request | Useful RPM reduction |
+| Steady-state capacity utilization | Observed TPM divided by assigned TPM |
+
+The verified automatic report discovered 15K + 15K from Azure, derived a 24K
+target and 1,200-token ceiling, and split 100 inputs into batches of 1,190 and
+210 tokens. Estimates matched actual prompt tokens exactly. The resulting two
+requests represented a 98% request reduction. A low mean fill ratio can be
+caused by the final remainder batch; inspect p95/max and run larger datasets
+before changing the ceiling.
+
+The token-aware AML validation over 200 inputs also produced two requests with
+estimated/actual token sizes of 860 and 1,200. Both returned HTTP 200 with zero
+failures. This confirms the same tokenizer and ceiling are used in the deployed
+AML component, not only in the local APIM experiment.
+
+### AML Studio child-job metrics
+
+MLflow metrics belong to the embedding command child job, not the parent
+pipeline. In AML Studio, open the invoked pipeline job, select the embedding
+step, and open **Metrics**. With the default prefix, the run exposes:
+
+- `embedding_batch.attempted_rpm`, `successful_rpm`, and `accepted_tpm`;
+- `logical_inputs_per_minute` and request/input/token totals;
+- `success_rate`, `throttled_requests`, and `throttle_rate`;
+- request latency p50/p95/p99;
+- inputs/request and prompt tokens/successful request;
+- token/item ceiling fill and estimated/actual token ratio;
+- request-window duration.
+
+Azure ML automatically starts the MLflow run for job code. The component calls
+`mlflow.log_metrics()` directly and intentionally does not call
+`mlflow.start_run()`, which could create a separate nested run. The environment
+includes both `mlflow` and the `azureml-mlflow` workspace integration package.
+This follows Microsoft's [MLflow and Azure Machine Learning](https://learn.microsoft.com/azure/machine-learning/concept-mlflow?view=azureml-api-2)
+and [metric logging](https://learn.microsoft.com/azure/machine-learning/how-to-log-view-metrics?view=azureml-api-2)
+guidance for Azure ML SDK v2 jobs.
+
+MLflow publishing defaults to enabled for AML invocations:
+
+```bash
+uv run aml-batch-embeddings invoke \
+  --model ada-apim \
+  --metric-logging mlflow \
+  --metric-prefix embedding_batch
+```
+
+Disable only the AML Metrics-tab publication while retaining `trace.jsonl`:
+
+```bash
+uv run aml-batch-embeddings invoke \
+  --model ada-apim \
+  --metric-logging disabled
+```
+
+Use a different prefix to compare named workload families without changing the
+metric schema. Prefixes must start with a letter and may contain letters,
+digits, dots, dashes, and underscores.
 
 ### Interpreting HTTP 429: RPM or TPM
 
