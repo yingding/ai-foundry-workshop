@@ -3,6 +3,8 @@
 **Time:** 10 minutes  
 **Goal:** Explain why document embeddings can hit request and token limits, and assign one responsibility to packing, AML, APIM, and Foundry.
 
+> Disclaimer: This is a learning/sample artifact — not production hardened.
+
 ---
 
 ## The Document-Chunk Problem
@@ -87,7 +89,7 @@ Azure Machine Learning batch endpoints provide asynchronous jobs, storage-backed
 
 APIM exposes two independently allocated model deployments as one backend pool. APIM does not create quota; it routes across existing capacity.
 
-```mermaid
+<div class="mermaid">
 flowchart LR
     A[Document chunks] --> B[AML batch endpoint]
     B --> C[Pack inputs]
@@ -96,7 +98,7 @@ flowchart LR
     E --> F[ADA Embedding Model 1]
     E --> G[ADA Embedding Model 2]
     B --> H[Embeddings, traces, MLflow metrics]
-```
+</div>
 
 ## What Is a Circuit Breaker?
 

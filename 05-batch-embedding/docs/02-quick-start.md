@@ -3,6 +3,8 @@
 **Time:** 10 minutes  
 **Goal:** Validate a pre-provisioned workshop environment and submit one successful APIM-pooled AML batch job.
 
+> Disclaimer: This is a learning/sample artifact — not production hardened.
+
 ---
 
 ## Pre-work Required

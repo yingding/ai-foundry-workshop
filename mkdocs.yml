@@ -1,4 +1,4 @@
-site_name: Batch Embeddings on Azure Foundry and Azure Machine Learning
+site_name: Batch Embeddings on Microsoft Foundry and Azure Machine Learning
 site_author: Yingding Wang
 site_description: A one-hour evidence-driven workshop for optimizing document embeddings with AML batch jobs, request packing, MLflow metrics, and APIM backend pooling.
 site_url: https://yingding.github.io/ai-foundry-workshop/
@@ -40,7 +40,13 @@ markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
 
+extra_css:
+  - assets/stylesheets/diagram-zoom.css
+
 extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js
+  - assets/javascripts/mermaid-init.js
+  - assets/javascripts/diagram-zoom.js
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
 nav:

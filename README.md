@@ -3,9 +3,7 @@
 Hands-on samples and tutorials for Azure AI Foundry, Azure Machine Learning,
 agent workflows, evaluation, and batch embeddings.
 
-> **Disclaimer:** This repository contains learning and demonstration artifacts.
-> It is not production hardened. Validate security, reliability, cost, quota,
-> and compliance requirements before adapting a sample for production.
+> Disclaimer: This is a learning/sample artifact — not production hardened.
 
 ## Contents
 

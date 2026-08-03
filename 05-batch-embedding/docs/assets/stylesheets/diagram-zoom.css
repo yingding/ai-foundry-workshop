@@ -1,0 +1,66 @@
+.mermaid,
+.zoomable-media {
+  cursor: zoom-in;
+}
+
+.mermaid:focus-visible,
+.zoomable-media:focus-visible {
+  outline: 3px solid var(--md-accent-fg-color);
+  outline-offset: 4px;
+}
+
+.diagram-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: rgb(0 0 0 / 82%);
+  cursor: zoom-out;
+}
+
+.diagram-lightbox[hidden] {
+  display: none;
+}
+
+.diagram-lightbox__content {
+  width: min(96vw, 1600px);
+  max-height: 92vh;
+  overflow: auto;
+  padding: 1.5rem;
+  border-radius: 6px;
+  background: var(--md-default-bg-color);
+  box-shadow: 0 1rem 4rem rgb(0 0 0 / 45%);
+  cursor: default;
+}
+
+.diagram-lightbox__content svg,
+.diagram-lightbox__content img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: auto;
+}
+
+.diagram-lightbox__content svg {
+  min-width: 900px;
+}
+
+.diagram-lightbox__content img {
+  max-width: none;
+}
+
+body.diagram-lightbox-open {
+  overflow: hidden;
+}
+
+@media (max-width: 700px) {
+  .diagram-lightbox {
+    padding: 0.75rem;
+  }
+
+  .diagram-lightbox__content {
+    padding: 0.75rem;
+  }
+}

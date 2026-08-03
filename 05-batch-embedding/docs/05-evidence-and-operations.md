@@ -3,6 +3,8 @@
 **Time:** 10 minutes  
 **Goal:** Export AML metrics, classify rate-limit evidence conservatively, and separate proven claims from production follow-up.
 
+> Disclaimer: This is a learning/sample artifact — not production hardened.
+
 ---
 
 ## Find Metrics in AML Studio

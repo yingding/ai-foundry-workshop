@@ -1,8 +1,6 @@
 # Foundry batch embeddings
 
-> **Disclaimer:** This is a learning and proof-of-concept implementation. It is
-> not production hardened. Revalidate quotas, model availability, networking,
-> identity, retry behavior, and operational targets in your own environment.
+> Disclaimer: This is a learning/sample artifact — not production hardened.
 
 ## Contents
 

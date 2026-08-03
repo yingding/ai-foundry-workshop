@@ -3,6 +3,8 @@
 **Time:** 15 minutes  
 **Goal:** Prove that input-array packing reduces client HTTP requests for the same successful logical work.
 
+> Disclaimer: This is a learning/sample artifact — not production hardened.
+
 ---
 
 ## Hypothesis and Controls
@@ -80,7 +82,7 @@ The fresh packed run is grouped separately from TPM experiments:
 Open the **child task**, then select the **Metrics** tab. Parent pipeline jobs
 show orchestration; the child command job owns the embedding metrics.
 
-![AML Studio child job Metrics tab showing the packed RPM experiment](imgs/aml-studio-rpm-packed-child-metrics.png)
+![AML Studio child job Metrics tab showing the packed RPM experiment](imgs/aml-studio-rpm-packed-child-metrics.png){ .zoomable-media }
 
 *AML Studio child task metrics for `workshop_rpm_packed_v2.*`. The corresponding
 JSON export is the reproducible source for exact metric names and values.*

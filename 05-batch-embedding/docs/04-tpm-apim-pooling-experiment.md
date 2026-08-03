@@ -3,6 +3,8 @@
 **Time:** 15 minutes  
 **Goal:** Compare one deployment with an APIM pool using the same packed workload and clean quota windows.
 
+> Disclaimer: This is a learning/sample artifact — not production hardened.
+
 ---
 
 ## Capacity Model
