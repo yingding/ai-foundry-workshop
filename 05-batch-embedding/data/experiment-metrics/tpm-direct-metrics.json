@@ -1,0 +1,12 @@
+{
+  "metric_job_status": "Completed",
+  "metric_prefix": "workshop_tpm_direct",
+  "metrics": {
+    "workshop_tpm_direct.accepted_tpm": 7946.988158004825,
+    "workshop_tpm_direct.attempted_logical_inputs": 400.0,
+    "workshop_tpm_direct.failed_requests": 0.0,
+    "workshop_tpm_direct.prompt_tokens": 17680.0,
+    "workshop_tpm_direct.success_rate": 1.0,
+    "workshop_tpm_direct.throttle_rate": 0.0
+  }
+}

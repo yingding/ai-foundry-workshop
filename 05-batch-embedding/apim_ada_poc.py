@@ -55,8 +55,8 @@ class ApimPocContract:
     expected_model: str = "text-embedding-ada-002"
     expected_model_version: str = "2"
     backend_priority: int = 1
-    default_target_utilization: float = 0.8
-    default_requests_per_minute: float = 20.0
+    default_target_utilization: float = 0.6
+    default_requests_per_minute: float = 15.0
     breaker_name: str = "ada-rate-limit"
     breaker_failure_count: int = 3
     breaker_failure_interval: str = "PT30S"

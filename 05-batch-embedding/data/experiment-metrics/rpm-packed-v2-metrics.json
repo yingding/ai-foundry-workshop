@@ -1,0 +1,11 @@
+{
+  "metric_job_status": "Completed",
+  "metric_prefix": "workshop_rpm_packed_v2",
+  "metrics": {
+    "workshop_rpm_packed_v2.attempted_logical_inputs": 100.0,
+    "workshop_rpm_packed_v2.attempted_requests": 1.0,
+    "workshop_rpm_packed_v2.prompt_tokens": 1030.0,
+    "workshop_rpm_packed_v2.success_rate": 1.0,
+    "workshop_rpm_packed_v2.throttle_rate": 0.0
+  }
+}

@@ -412,8 +412,9 @@ $$
 \mathrm{TPM}_{primary}+\mathrm{TPM}_{secondary}
 $$
 
-For two confirmed 15,000-TPM deployments, the useful steady-state target is
-24,000-27,000 TPM. The unbuffered sum of 30,000 TPM is a boundary, not the
+For two confirmed 15,000-TPM deployments, the current workshop plan is 18,000
+TPM, or 60% of assigned capacity. The measured 24,000-27,000 TPM runs are
+historical boundary evidence, and the unbuffered sum of 30,000 TPM is not the
 recommended operating point.
 
 ## Commands
@@ -772,7 +773,8 @@ both HTTP 200, with zero failures and a 4,275.229 ms embedding-loop duration.
 | Load pacing and secret-free metrics work | Verified at low rate | Long-window repetitions |
 | Both backends receive gateway traffic | Pending | APIM diagnostics or Azure Monitor backend URL telemetry over a long run |
 | Pool exceeds measured direct throughput | Verified: +68.523% and +79.397% | Backend-member attribution still required |
-| 24,000-27,000 TPM operating range | Verified once at 24K and once at 27K | Repeat each point before production selection |
+| 18,000 TPM workshop operating point | Verified in the safe AML A/B with zero throttling | Repeat before production selection |
+| 24,000-27,000 TPM boundary range | Verified once at 24K and once at 27K | Treat as historical boundary evidence and repeat before use |
 | Circuit breaker removes and restores a backend | Pending | Isolated overload and recovery experiment |
 | Parallel AML deployment works through APIM | Verified | Repeat with representative production input distribution |
 
@@ -800,7 +802,7 @@ point even when assigned TPM remains unchanged.
 - all vectors contain 1,536 finite values;
 - both backends receive traffic over a sufficiently long run;
 - sustained gateway throughput exceeds a single 15,000-TPM backend;
-- selected steady state approaches 24,000-27,000 TPM;
+- selected steady state reaches the current 18,000-TPM workshop plan without throttling;
 - HTTP 429 remains below 1%;
 - breaker tests remove and restore a throttled backend;
 - p50, p95, and p99 latency are reported per target.

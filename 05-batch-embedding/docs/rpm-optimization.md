@@ -132,20 +132,20 @@ written to the child job trace and MLflow metric report.
 
 Assume one packed request contains 100 inputs and 1,030 tokens.
 
-For a direct 15,000-TPM deployment using an 80% token target and a conservative
-720-input/minute target:
+For a direct 15,000-TPM deployment using the current 60% token target and the
+workshop's conservative 180-input/minute target:
 
 $$
 \mathrm{token\ interval}
-=\frac{1{,}030\times60}{12{,}000}=5.15\ \mathrm{seconds}
+=\frac{1{,}030\times60}{9{,}000}=6.87\ \mathrm{seconds}
 $$
 
 $$
 \mathrm{input\ interval}
-=\frac{100\times60}{720}=8.33\ \mathrm{seconds}
+=\frac{100\times60}{180}=33.33\ \mathrm{seconds}
 $$
 
-The scheduler waits 8.33 seconds because input-rate pacing is stricter for this
+The scheduler waits 33.33 seconds because input-rate pacing is stricter for this
 small-chunk request. For longer chunks, token pacing can become the stricter
 term instead.
 
@@ -225,10 +225,10 @@ $$
 \mathrm{target\ tokens\ per\ request}=\frac{T\cdot u}{R}
 $$
 
-For the ADA Embedding Model with $T=15{,}000$, $u=0.8$, and $R=10$:
+For the ADA Embedding Model with $T=15{,}000$, $u=0.6$, and $R=7.5$:
 
 $$
-\frac{15{,}000\cdot0.8}{10}=1{,}200\ \mathrm{tokens/request}
+\frac{15{,}000\cdot0.6}{7.5}=1{,}200\ \mathrm{tokens/request}
 $$
 
 The measured packed sample used approximately 1,224 token units per 100-input
@@ -285,30 +285,30 @@ the minute instead of releasing one large burst.
 For assigned TPM $T$, target utilization $u$, and estimated batch tokens $b$:
 
 $$
-\mathrm{batches\ per\ minute}=\left\lfloor\frac{T\cdot u}{b}\right\rfloor
+\mathrm{batches\ per\ minute}=\frac{T\cdot u}{b}
 $$
 
 $$
 \mathrm{spacing\ seconds}=\frac{60}{\mathrm{batches\ per\ minute}}
 $$
 
-Using $T=15{,}000$, $u=0.8$, and $b=1{,}200$:
+Using $T=15{,}000$, $u=0.6$, and $b=1{,}200$:
 
 $$
-\mathrm{batches\ per\ minute}=10
+\mathrm{batches\ per\ minute}=7.5
 $$
 
 $$
-\mathrm{spacing}=6\ \mathrm{seconds}
+\mathrm{spacing}=8\ \mathrm{seconds}
 $$
 
 The initial operating point is therefore:
 
 - batch mode enabled;
 - approximately 100 sample inputs or 1,200 estimated tokens per request;
-- 10 requests per minute;
-- one request approximately every six seconds;
-- 12,000 target tokens per minute, or 80% of assigned TPM.
+- 7.5 requests per minute;
+- one request approximately every eight seconds;
+- 9,000 target tokens per minute, or 60% of assigned TPM.
 
 This is a conservative starting point, not a permanent constant. Validate it
 with representative input distributions before raising the utilization target.
@@ -368,7 +368,7 @@ reporting 100 inputs per request and a 99% request reduction with no HTTP 429.
 This proves request reduction, not token reduction: the packed request still
 consumed the tokens for all 100 inputs.
 
-With automatic capacity-aware sizing enabled, Azure metadata reported two
+In the earlier 80% boundary experiment, Azure metadata reported two
 15,000-TPM backends. At 80% utilization and 20 planned requests/minute, the
 derived token ceiling was 1,200 tokens/request. The same 100 logical inputs then
 formed two requests: 85 inputs/1,190 tokens and 15 inputs/210 tokens. Estimated

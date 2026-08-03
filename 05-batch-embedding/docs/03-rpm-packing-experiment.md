@@ -1,6 +1,6 @@
 # 03 — RPM and Packing Experiment
 
-**Time:** 15 minutes  
+**Time:** 10 minutes
 **Goal:** Prove that input-array packing reduces client HTTP requests for the same successful logical work.
 
 > Disclaimer: This is a learning/sample artifact — not production hardened.
@@ -51,7 +51,7 @@ uv run aml-batch-embeddings invoke \
   --max-retries 0 \
   --request-concurrency 1 \
   --metric-logging mlflow \
-  --metric-prefix workshop_rpm_packed
+  --metric-prefix workshop_rpm_packed_v2
 ```
 
 Both commands omit pacing. The small fixture is designed to compare request shape, not locate a sustained boundary.
@@ -64,8 +64,8 @@ uv run aml-batch-embeddings metrics <none-parent-job-id> \
   --output outputs/workshop/rpm-none-metrics.json
 
 uv run aml-batch-embeddings metrics <packed-parent-job-id> \
-  --prefix workshop_rpm_packed \
-  --output outputs/workshop/rpm-packed-metrics.json
+  --prefix workshop_rpm_packed_v2 \
+  --output outputs/workshop/rpm-packed-v2-metrics.json
 ```
 
 ## Verified Result

@@ -61,12 +61,14 @@ For the verified environment:
 | Primary backend | 15,000 TPM |
 | Secondary backend | 15,000 TPM |
 | Aggregate assigned capacity | 30,000 TPM |
-| Utilization target | 80% |
-| APIM operating target | 24,000 TPM |
-| Planned requests/minute | 20 |
+| Utilization target | 60% |
+| APIM plan target | 18,000 TPM |
+| Planned requests/minute | 15 |
 | Target tokens/request | 1,200 |
 
 Your values can differ. Use the plan output rather than copying this table.
+The 60% default preserves headroom for the ADA Embedding Model's measured
+call-rate behavior while retaining the verified 1,200-token request ceiling.
 
 ## Submit a Smoke Job
 

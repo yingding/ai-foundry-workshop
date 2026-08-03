@@ -148,8 +148,8 @@ Azure management SDK and converts capacity units to assigned TPM. It then:
 3. applies the configured utilization target;
 4. divides target TPM by planned requests/minute to obtain the token ceiling.
 
-For the current 15K + 15K pool, defaults produce 30,000 assigned TPM, a 24,000
-TPM target, 20 requests/minute, and 1,200 target tokens/request. Optional
+For the current 15K + 15K pool, defaults produce 30,000 assigned TPM, an 18,000
+TPM target, 15 requests/minute, and 1,200 target tokens/request. Optional
 `APIM_ADA_PRIMARY_TPM` and `APIM_ADA_SECONDARY_TPM` values override delayed or
 unavailable metadata. `APIM_ADA_TARGET_UTILIZATION` and
 `APIM_ADA_REQUESTS_PER_MINUTE` tune policy rather than resource allocation.

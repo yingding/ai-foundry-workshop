@@ -1,0 +1,11 @@
+{
+  "metric_job_status": "Failed",
+  "metric_prefix": "workshop_tpm_direct_overload",
+  "metrics": {
+    "workshop_tpm_direct_overload.accepted_tpm": 9565.391324333357,
+    "workshop_tpm_direct_overload.attempted_logical_inputs": 400.0,
+    "workshop_tpm_direct_overload.failed_requests": 3.0,
+    "workshop_tpm_direct_overload.successful_logical_inputs": 323.0,
+    "workshop_tpm_direct_overload.throttle_rate": 0.1875
+  }
+}

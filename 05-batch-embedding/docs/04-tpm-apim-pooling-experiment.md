@@ -21,14 +21,14 @@ $$
 15{,}000+15{,}000=30{,}000\ \mathrm{TPM}
 $$
 
-At 80% utilization:
+At the workshop's 60% utilization plan:
 
 $$
-\mathrm{direct\ target}=15{,}000\times0.8=12{,}000\ \mathrm{TPM}
+\mathrm{direct\ target}=15{,}000\times0.6=9{,}000\ \mathrm{TPM}
 $$
 
 $$
-\mathrm{pool\ target}=30{,}000\times0.8=24{,}000\ \mathrm{TPM}
+\mathrm{pool\ target}=30{,}000\times0.6=18{,}000\ \mathrm{TPM}
 $$
 
 APIM does not create quota. The capacity must be independently assigned to eligible backends.
@@ -69,6 +69,21 @@ The logical-input target is empirical because Microsoft does not publish the ADA
     Do not run the pooled job immediately after a throttled direct job. `Retry-After` and rolling service state can contaminate the next result. Use separate clean windows and record job order.
 
 The one-hour workshop should use pre-recorded sustained evidence while participants run shorter path-validation jobs. Instructor capacity runs should use two-to-five-minute windows and repeat selected points at least three times.
+
+### Workshop plan and measured headroom
+
+The current plan uses 60% of assigned TPM plus conservative logical-input
+ceilings:
+
+| Route | Assigned TPM | Plan target (60%) | Input target/minute |
+|---|---:|---:|---:|
+| Direct | 15,000 | 9,000 | 180 |
+| APIM pool | 30,000 | 18,000 | 360 |
+
+Earlier 80% experiments used 12K direct and 24K pooled targets. The 12K AML
+direct run received explicit **call-rate** HTTP 429 responses, so 80% remains
+historical boundary evidence rather than the default workshop plan. The 60%
+settings are empirically safe for this workload, not universal Azure defaults.
 
 ## A — Direct Control
 
@@ -182,26 +197,13 @@ worse because p95/p99 increased. Higher aggregate throughput therefore does not
 prove uniformly lower latency. Repeat with a much larger request count before
 selecting a production operating point.
 
-### Earlier local HTTP evidence
+### Deep evidence
 
-The local HTTP capacity runner previously used matched 100-input arrays over three-minute windows:
-
-| Route | Configured TPM | Steady TPM | Success | 429 | 503 |
-|---|---:|---:|---:|---:|---:|
-| Direct primary | 15,000 | 14,234.792 | 30/33 | 3 | 0 |
-| APIM pool | 24,000 | 23,988.846 | 52/52 | 0 | 0 |
-| APIM pool boundary | 27,000 | 25,536.802 | 55/55 | 0 | 0 |
-
-The 24K pooled run exceeded the direct measurement by 68.523%; the 27K run exceeded it by 79.397%. These runs support the pooling hypothesis once, but production selection still requires repetition and backend-member telemetry.
-
-## A Useful Failed Experiment
-
-A direct AML run paced toward 12K TPM immediately after earlier throttling tests still returned explicit **call-rate** 429 responses. Its accepted tokens remained below 15K. This demonstrates:
-
-- token pacing does not prove request/call-rate safety;
-- packed logical inputs can still contribute to model-side call-rate pressure;
-- experiment ordering and clean windows matter;
-- HTTP 429 alone is not enough; retain the error message and counters.
+Earlier three-minute local HTTP controls and the failed 12K AML experiment are
+retained in [APIM ADA proof-of-concept evidence](apim-ada-poc.md#initial-verified-result)
+and [RPM optimization](rpm-optimization.md#why-dual-pacing-was-added). Lesson 5
+uses the failed run only to explain how to interpret throttling; it is not part
+of the successful capacity A/B.
 
 ## Pass Criteria
 

@@ -43,12 +43,12 @@ def build_chart(input_dir: Path, output_path: Path) -> None:
             "Packed array", input_dir / "rpm-packed-v2-metrics.json"
         ),
         "direct_overload": Experiment(
-            "Direct overload", input_dir / "tpm-direct-clean-failed-metrics.json"
+            "Direct overload", input_dir / "tpm-direct-overload-metrics.json"
         ),
-        "direct_safe": Experiment(
-            "Direct safe", input_dir / "tpm-direct-safe-metrics.json"
+        "direct": Experiment(
+            "Direct 60% plan", input_dir / "tpm-direct-metrics.json"
         ),
-        "pool_safe": Experiment("APIM pool safe", input_dir / "tpm-pool-safe-metrics.json"),
+        "pool": Experiment("APIM pool 60% plan", input_dir / "tpm-pool-metrics.json"),
     }
     metrics = {name: load_metrics(report) for name, report in reports.items()}
 
@@ -91,11 +91,11 @@ def build_chart(input_dir: Path, output_path: Path) -> None:
     )
 
     tpm_values = [
-        metrics["direct_safe"]["accepted_tpm"],
-        metrics["pool_safe"]["accepted_tpm"],
+        metrics["direct"]["accepted_tpm"],
+        metrics["pool"]["accepted_tpm"],
     ]
     bars = axes[1].bar(
-        [reports["direct_safe"].label, reports["pool_safe"].label],
+        [reports["direct"].label, reports["pool"].label],
         tpm_values,
         color=[cyan, blue],
     )
@@ -116,14 +116,14 @@ def build_chart(input_dir: Path, output_path: Path) -> None:
 
     throttle_values = [
         metrics["direct_overload"]["throttle_rate"] * 100,
-        metrics["direct_safe"]["throttle_rate"] * 100,
-        metrics["pool_safe"]["throttle_rate"] * 100,
+        metrics["direct"]["throttle_rate"] * 100,
+        metrics["pool"]["throttle_rate"] * 100,
     ]
     bars = axes[2].bar(
         [
             reports["direct_overload"].label,
-            reports["direct_safe"].label,
-            reports["pool_safe"].label,
+            reports["direct"].label,
+            reports["pool"].label,
         ],
         throttle_values,
         color=[red, cyan, blue],
@@ -159,7 +159,7 @@ def main() -> None:
     parser.add_argument(
         "--input-dir",
         type=Path,
-        default=Path("outputs/workshop"),
+        default=Path("data/experiment-metrics"),
     )
     parser.add_argument(
         "--output",

@@ -15,7 +15,7 @@ MLflow metrics belong to the child command job:
 2. Open the parent `pipelinejob-...` run.
 3. Select the embedding step.
 4. Open **Metrics**.
-5. Select the experiment prefix, such as `workshop_rpm_packed.*`.
+5. Select the experiment prefix, such as `workshop_rpm_packed_v2.*`.
 
 Azure ML automatically starts the MLflow run for job code. The component logs directly with `mlflow.log_metrics()`.
 
@@ -27,8 +27,8 @@ Portal screenshots support instruction, but JSON is the reproducible evidence:
 
 ```bash
 uv run aml-batch-embeddings metrics <parent-or-child-job-id> \
-  --prefix workshop_rpm_packed \
-  --output outputs/workshop/rpm-packed-metrics.json
+  --prefix workshop_rpm_packed_v2 \
+  --output outputs/workshop/rpm-packed-v2-metrics.json
 ```
 
 The report contains:
@@ -60,7 +60,7 @@ must not share one axis.
 |---|---|---|---|
 | RPM experiment | 100 client requests became 1 for the same 100 inputs and 1,030 tokens | Packing reduced client HTTP request consumption by 99% | Azure's internal call-rate accounting necessarily fell by 99% |
 | TPM experiment | APIM accepted 15,867.064 TPM versus 7,946.988 direct for the same 400 inputs and 17,680 tokens | The independently allocated pool delivered 99.661% more accepted TPM at the tested safe rates | APIM created quota or this is the maximum safe production target |
-| Admission behavior | Direct overload had 18.75% HTTP 429; safe direct and safe pool had 0% | Offered load and experiment sequencing determine whether a run is valid capacity evidence | Every 429 is TPM-related or retries should hide the boundary |
+| Admission behavior | Historical direct overload had 18.75% HTTP 429; both 60% plan runs had 0% | Offered load and experiment sequencing determine whether a run is valid capacity evidence | Every 429 is TPM-related or retries should hide the boundary |
 
 ### How the system behaved differently
 
@@ -78,11 +78,11 @@ produced three explicit call-rate 429 responses. Only 323 of 400 logical inputs
 succeeded. Token pacing alone was therefore insufficient for that workload
 regime.
 
-**Safe direct route:** reducing offered load to 9K target TPM and 180 logical
+**60% direct plan:** offering 9K target TPM and 180 logical
 inputs/minute produced 400/400 successes, 7,946.988 accepted TPM, and zero
 throttling over 133.485 seconds.
 
-**Safe APIM pool:** doubling offered load to 18K target TPM and 360 logical
+**60% APIM pool plan:** doubling offered load to 18K target TPM and 360 logical
 inputs/minute produced the same successful work in 66.855 seconds, 15,867.064
 accepted TPM, and zero throttling. This is the cleanest AML evidence that the
 pool exposes more usable capacity than one direct deployment.
@@ -106,14 +106,14 @@ Install authoring dependencies and export the named AML reports first:
 
 ```bash
 python -m pip install -r requirements_dev.txt
-python analyze_workshop_experiments.py \
-  --input-dir outputs/workshop \
-  --output docs/imgs/workshop-experiment-analysis.png
+python analyze_workshop_experiments.py
 ```
 
-The generator is `analyze_workshop_experiments.py`. The PNG is a documentation
-artifact; the exported JSON reports remain the source of exact values and job
-identifiers.
+The generator is `analyze_workshop_experiments.py`. By default it reads the
+sanitized committed fixtures in `data/experiment-metrics/`, so the chart can be
+reproduced without Azure access. Pass `--input-dir outputs/workshop` to use fresh
+live exports instead. The PNG is a documentation artifact; live exported JSON
+reports remain the source of exact job identifiers.
 
 ## Distinguish RPM from TPM Evidence
 
@@ -164,7 +164,7 @@ Do not use this failure injection during the direct-versus-pool capacity A/B.
 | Packing reduces client HTTP requests | Verified: 100 → 1 for identical 100 inputs | Repeat for representative distributions |
 | Token estimates match service prompt tokens | Verified on packed workshop runs | Monitor after tokenizer/model changes |
 | APIM managed-identity route works | Verified | None for path validation |
-| Pool exceeds one direct deployment | Verified in AML safe A/B: 15,867.064 versus 7,946.988 accepted TPM | Repeat and capture backend-member telemetry |
+| Pool exceeds one direct deployment | Verified in the AML 60% plan A/B: 15,867.064 versus 7,946.988 accepted TPM | Repeat and capture backend-member telemetry |
 | Exact ADA Embedding Model RPM | Unknown | Service did not return request-limit header; public ratio unavailable |
 | Packed arrays reduce model-side call accounting 1:1 | Not proven | Controlled clean-window boundary experiment |
 | Circuit breaker withdraws/restores one backend | Pending | Failure injection plus APIM diagnostics |
@@ -174,7 +174,7 @@ Do not use this failure injection during the direct-versus-pool capacity A/B.
 - [x] Explain service request limits versus deployment capacity.
 - [x] Run and export the RPM packing A/B.
 - [x] Explain direct and pooled TPM targets.
-- [x] Run and export a successful safe direct/APIM TPM comparison.
+- [x] Run and export a successful direct/APIM comparison at the 60% plan.
 - [x] Locate child metrics in AML Studio.
 - [x] Classify 429 evidence without guessing.
 - [ ] Repeat sustained TPM and breaker experiments before production adoption.

@@ -250,11 +250,11 @@ class OptimizationUtilityTests(unittest.TestCase):
 
     def test_capacity_drives_utilization_and_request_target(self) -> None:
         aggregate_tpm = capacity_units_to_tpm(15) + capacity_units_to_tpm(15)
-        target_tpm = utilization_target_tpm(aggregate_tpm, 0.8)
+        target_tpm = utilization_target_tpm(aggregate_tpm, 0.6)
 
         self.assertEqual(aggregate_tpm, 30000)
-        self.assertEqual(target_tpm, 24000)
-        self.assertEqual(target_tokens_per_request(target_tpm, 20), 1200)
+        self.assertEqual(target_tpm, 18000)
+        self.assertEqual(target_tokens_per_request(target_tpm, 15), 1200)
         self.assertEqual(PLAN.assigned_tpm, "assigned_tpm")
         self.assertEqual(PLAN.max_batch_tokens, "max_batch_tokens")
 

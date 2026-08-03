@@ -1,6 +1,6 @@
 # 01 — Problem and Solution Architecture
 
-**Time:** 10 minutes  
+**Time:** 15 minutes
 **Goal:** Explain why document embeddings can hit request and token limits, and assign one responsibility to packing, AML, APIM, and Foundry.
 
 > Disclaimer: This is a learning/sample artifact — not production hardened.
@@ -194,6 +194,84 @@ flowchart LR
     E --> G[ADA Embedding Model 2]
     B --> H[Embeddings, traces, MLflow metrics]
 </div>
+
+## Estimated Cost
+
+!!! warning "Cost estimate disclaimer"
+    The amounts below are estimates only, not a quote or billing guarantee.
+    Actual cost can be higher or lower based on consumption, including tokens
+    processed, AML node count and runtime, APIM request volume, storage,
+    monitoring, networking, region, currency, taxes, and your Azure agreement.
+    Verify current prices and review Azure Cost Management before deployment.
+
+This estimate uses public USD consumption prices retrieved on **August 3,
+2026** with the Azure Pricing MCP tool and the Azure Retail Prices API through
+`az rest`.
+
+### Price assumptions
+
+| Component | Workshop configuration | Public retail rate used |
+|---|---|---:|
+| API Management | Basic v2, one East US 2 unit | $0.20548/unit-hour |
+| AML compute | Linux `Standard_DS3_v2`, East US 2 | $0.229/node-hour |
+| ADA Embedding Model | Global Standard, pay as you go | $0.0001/1K input tokens |
+| AML compute-cluster load balancer | One cluster | Approximately $0.33/day |
+
+The cluster can scale to zero after 120 idle seconds, so VM charges accrue only
+while nodes run. Its `max_instances=2` setting is a ceiling, not a guarantee
+that two nodes are billed. The standard load balancer can remain billable while
+the compute cluster exists. APIM Basic v2 has a fixed unit charge and can add a
+request charge above its included threshold; this workshop's request volume is
+far below that scale.
+
+Assigning 15K TPM to each Global Standard model deployment controls throughput;
+it does **not** reserve paid provisioned throughput. Standard inference is
+charged for tokens processed. The workshop's smoke run, two RPM runs, and two
+TPM runs process approximately:
+
+$$
+1{,}030+1{,}030+1{,}030+17{,}680+17{,}680
+=38{,}450\ \mathrm{tokens}
+$$
+
+Therefore the estimated model charge is:
+
+$$
+\frac{38{,}450}{1{,}000}\times\$0.0001=\$0.003845
+$$
+
+### Cost scenarios
+
+| Scenario | Calculation | Estimated cost |
+|---|---|---:|
+| One-hour lab, one active AML node-hour | $0.20548 + $0.229 + $0.003845 | **$0.44** |
+| One-hour lab, two active AML node-hours | $0.20548 + (2 × $0.229) + $0.003845 | **$0.67** |
+| Marginal lab cost when APIM is already running | $0.229 + $0.003845 | **$0.23** |
+| Persistent idle environment, 730-hour month | (730 × $0.20548) + (30 × $0.33) | **Approximately $159.90/month** |
+
+The persistent baseline is dominated by APIM. It excludes AML VM hours because
+the cluster scales to zero, and excludes variable storage, monitoring, network,
+and token charges. Delete the APIM instance and AML compute cluster after the
+workshop if they are not shared resources.
+
+Recheck the live meters before budgeting. For example:
+
+```bash
+az rest --method get --url \
+    "https://prices.azure.com/api/retail/prices?currencyCode=USD&\$filter=serviceName%20eq%20%27API%20Management%27%20and%20armRegionName%20eq%20%27eastus2%27"
+
+az rest --method get --url \
+    "https://prices.azure.com/api/retail/prices?currencyCode=USD&\$filter=contains(meterName,%20%27Ada%27)"
+```
+
+References:
+
+- [Azure Retail Prices API](https://learn.microsoft.com/rest/api/cost-management/retail-prices/azure-retail-prices)
+- [Plan and manage API Management costs](https://learn.microsoft.com/azure/api-management/plan-manage-costs)
+- [Plan and manage Azure Machine Learning costs](https://learn.microsoft.com/azure/machine-learning/concept-plan-manage-cost?view=azureml-api-2)
+- [Optimize Azure Machine Learning costs](https://learn.microsoft.com/azure/machine-learning/how-to-manage-optimize-cost?view=azureml-api-2)
+- [Azure OpenAI pricing](https://azure.microsoft.com/pricing/details/cognitive-services/openai-service/)
+- [Azure OpenAI quota and rate limits](https://learn.microsoft.com/azure/foundry/openai/how-to/quota)
 
 ## What Is a Circuit Breaker?
 
