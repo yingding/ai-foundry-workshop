@@ -28,6 +28,7 @@ aml-batch-embeddings = "batch_embeddings:main"
 apim-ada-poc = "apim_ada_poc:main"
 apim-ada-load = "apim_ada_load:main"
 apim-ada-analyze = "apim_ada_analyze:main"
+compare-route-embeddings = "compare_route_embeddings:main"
 setup-embedding-permissions = "setup_permissions:main"
 
 [build-system]
@@ -41,6 +42,7 @@ include = [
     "apim_ada_analyze.py",
     "batch_embeddings.py",
     "analyze_workshop_experiments.py",
+    "compare_route_embeddings.py",
     "network_setup.py",
     "permissions_setup.py",
     "setup_permissions.py",

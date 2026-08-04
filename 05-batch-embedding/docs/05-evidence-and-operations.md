@@ -115,6 +115,110 @@ reproduced without Azure access. Pass `--input-dir outputs/workshop` to use fres
 live exports instead. The PNG is a documentation artifact; live exported JSON
 reports remain the source of exact job identifiers.
 
+## Vector Equivalence Across Routes
+
+Throughput evidence answers "how fast". It does not answer "are the vectors
+usable in one index". `compare_route_embeddings.py` answers the second question
+by joining downloaded outputs on `input_id`.
+
+```bash
+uv run compare-route-embeddings \
+  --baseline  outputs/workshop/tpm-direct-safe-output \
+  --candidate outputs/workshop/tpm-pool-safe-output \
+  --baseline-label direct --candidate-label pooled \
+  --expected-dimensions 1536 \
+  --cosine-min 0.999 \
+  --output outputs/workshop/route-embedding-comparison.json
+```
+
+The gate validates each route (duplicate IDs, error records, one dimension, one
+model, finite values), then compares the shared IDs. It exits non-zero on
+failure, so it can run in CI once outputs exist.
+
+!!! important "Join on `input_id`, never on file position"
+    Azure returns only `index`. The component re-attaches `input_id` from the
+    packer's parallel ID array. Because packing changes how many items share a
+    request, file position is not comparable across runs and `input_id` is the
+    only valid join key.
+
+### Measured result
+
+Three runs over the same 400 logical inputs and 17,680 prompt tokens:
+
+| Comparison | Batching | Bit-identical | Cosine min | Below 0.999 |
+|---|---|---:|---:|---:|
+| direct packed vs pooled packed | identical (16 arrays) | 400 / 400 | 1.000000000 | 0 |
+| direct packed vs pooled unpacked | 16 vs 400 arrays | 18 / 400 | 0.999303950 | 0 |
+| pooled packed vs pooled unpacked | 16 vs 400 arrays | 18 / 400 | 0.999303950 | 0 |
+
+All vectors are unit-normalized within 1.2e-7, so cosine and dot product are
+interchangeable.
+
+### Identical text does not guarantee identical vectors
+
+The TPM corpus repeats 10 source texts 40 times each. Counting distinct vectors
+per source text exposes the cause:
+
+| Run | Client requests | Distinct vectors per source text |
+|---|---:|---|
+| Direct packed | 16 | `[3,3,3,2,3,3,3,3,3,2]` |
+| Pooled packed | 16 | `[3,3,3,2,3,3,3,3,3,2]` |
+| Pooled unpacked | 400 | `[1,2,1,1,3,1,1,2,2,1]` |
+
+For `workshop-tpm-01`, the packed runs produced three vectors in clusters of
+`[25, 13, 2]` — sizes that follow the array boundaries. The unpacked run, where
+every array holds one input, collapsed all 40 repeats into a single vector.
+
+Embedding inference is a batched matrix multiplication, and floating-point
+addition is not associative. Changing the batch shape changes kernel selection
+and reduction order, so the last bits differ. Microsoft and OpenAI document the
+semantics of the embeddings API, not bit-reproducibility.
+
+Some texts still produced two or three vectors from single-input arrays, so
+composition is the dominant factor but not the only one. Residual variation is
+consistent with requests landing on different backend instances, and is not
+proven from these runs.
+
+### The deviation is far below the retrieval signal
+
+Measured on the direct packed run:
+
+| Pair type | Pairs | Cosine range |
+|---|---:|---|
+| Same text, different array position | 26 | 0.999304 – 0.999999 |
+| Different source texts | 45 | 0.701021 – 0.861856 |
+
+$$
+\mathrm{separation\ margin}=0.999304-0.861856=0.137447
+$$
+
+The numerical noise is approximately 0.005 times the closest genuine
+distinction, and the two distributions do not overlap. No retrieval, ranking, or
+clustering decision in this workload can change because of it.
+
+### What to assert
+
+| Claim | Status |
+|---|---|
+| Vectors are cosine-identical (≥ 0.999) across direct, pooled, packed, and unpacked routes | Verified on 400 inputs |
+| Vectors are bit-identical when batching is held constant | Verified, 400 / 400 |
+| Vectors are bit-identical when packing changes | **False** — 18 / 400 |
+| Deviation can change a retrieval outcome here | Not supported — 0.137 margin |
+| The 0.999304 floor is a general bound | Not established — 10 texts, one model, three runs |
+
+Use `--cosine-min 0.999` as the default gate. Use `--require-identical` only
+when both runs use the same packing configuration, otherwise the test fails for
+a reason that has no operational meaning.
+
+### Operational consequences
+
+- Do not expect re-embedding to reproduce stored vectors bit-for-bit. Changing
+  `--max-inputs-per-request` or `--max-tokens-per-request` shifts components at
+  the 1e-3 level.
+- Do not diff vectors to detect drift. Compare cosine against a threshold.
+- Mixed packed and unpacked writes into one index remain safe at this
+  measured scale.
+
 ## Distinguish RPM from TPM Evidence
 
 Both limiters can return HTTP 429. Classify evidence in this order:
@@ -165,6 +269,8 @@ Do not use this failure injection during the direct-versus-pool capacity A/B.
 | Token estimates match service prompt tokens | Verified on packed workshop runs | Monitor after tokenizer/model changes |
 | APIM managed-identity route works | Verified | None for path validation |
 | Pool exceeds one direct deployment | Verified in the AML 60% plan A/B: 15,867.064 versus 7,946.988 accepted TPM | Repeat and capture backend-member telemetry |
+| Routes are cosine-equivalent (≥ 0.999) | Verified on 400 inputs across direct, pooled, packed, and unpacked | Repeat on a representative corpus |
+| Vectors are bit-identical across packing modes | Disproven: 18/400 identical when array shape changes | None — treat cosine as the contract |
 | Exact ADA Embedding Model RPM | Unknown | Service did not return request-limit header; public ratio unavailable |
 | Packed arrays reduce model-side call accounting 1:1 | Not proven | Controlled clean-window boundary experiment |
 | Circuit breaker withdraws/restores one backend | Pending | Failure injection plus APIM diagnostics |
@@ -177,6 +283,7 @@ Do not use this failure injection during the direct-versus-pool capacity A/B.
 - [x] Run and export a successful direct/APIM comparison at the 60% plan.
 - [x] Locate child metrics in AML Studio.
 - [x] Classify 429 evidence without guessing.
+- [x] Verify route vector equivalence with `compare-route-embeddings`.
 - [ ] Repeat sustained TPM and breaker experiments before production adoption.
 
 ---

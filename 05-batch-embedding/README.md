@@ -8,6 +8,7 @@
 - [Workshop Tutorial](#workshop-tutorial)
 - [Input and Output Format](#input-and-output-format)
 - [RPM Optimization](#rpm-optimization)
+- [Vector Equivalence Across Routes](#vector-equivalence-across-routes)
 - [Architecture](#architecture)
 - [Setup](#setup)
 - [Provisioning](#provision-one-endpoint-with-four-deployments)
@@ -23,6 +24,8 @@
 | `utils/embedding_optimization.py` | Developers | Shared packing, token counting, pacing, and throughput formulas |
 | `utils/aml_metrics.py` | Developers | Run-level RPM/TPM, reliability, latency, and packing metrics with optional MLflow publishing |
 | `analyze_workshop_experiments.py` | Workshop authors | Regenerate the experiment comparison chart from exported AML metric JSON reports |
+| `compare_route_embeddings.py` | Reviewers and developers | Quality gate that joins downloaded outputs on `input_id` and compares vectors across routes and packing modes |
+| `tests/test_route_embeddings.py` | Developers | Offline tests for the comparison gate: ID join, tolerance, duplicates, non-finite values |
 | `requirements_dev.txt` | Workshop authors | Runtime dependencies plus Matplotlib for chart generation |
 | `data/experiment-metrics/` | Workshop authors | Sanitized committed metric fixtures for offline chart regeneration |
 | `docs/index.md` through `docs/05-*.md` | Workshop participants | The five-page, one-hour guided tutorial |
@@ -128,6 +131,56 @@ AML provides asynchronous job orchestration and APIM provides routing, but
 neither service automatically schedules model calls to the current Foundry
 TPM/RPM counters. Production admission control can instead live in a queue,
 distributed rate limiter, or workflow scheduler.
+
+## Vector equivalence across routes
+
+Throughput evidence does not prove that vectors from different routes belong in
+one index. `compare_route_embeddings.py` checks that separately by joining
+downloaded outputs on `input_id`:
+
+```bash
+uv run compare-route-embeddings \
+  --baseline  outputs/workshop/tpm-direct-safe-output \
+  --candidate outputs/workshop/tpm-pool-safe-output \
+  --expected-dimensions 1536 \
+  --cosine-min 0.999
+```
+
+It validates each route (duplicate IDs, error records, one dimension, one model,
+finite values), reports bit-identical count, cosine min/mean, worst absolute and
+L2 deviation, and counts distinct vectors per source text. It exits non-zero on
+failure. Run the offline tests with
+`python -m unittest tests.test_route_embeddings`.
+
+### Findings
+
+Measured over 400 logical inputs and 17,680 prompt tokens on three runs:
+
+| Comparison | Batching | Bit-identical | Cosine min |
+| --- | --- | ---: | ---: |
+| Direct packed vs pooled packed | identical, 16 arrays | 400 / 400 | 1.000000000 |
+| Direct packed vs pooled unpacked | 16 vs 400 arrays | 18 / 400 | 0.999303950 |
+| Pooled packed vs pooled unpacked | 16 vs 400 arrays | 18 / 400 | 0.999303950 |
+
+The same text does not always produce the same vector. Repeating 10 source texts
+40 times produced 2–3 distinct vectors per text in the packed runs, in clusters
+that follow the array boundaries, but mostly a single vector per text in the
+unpacked run. Embedding inference is a batched matrix multiplication and
+floating-point addition is not associative, so changing the array shape changes
+the reduction order and the last bits. Bit-reproducibility is not part of the
+embeddings API contract.
+
+The deviation is far below the retrieval signal. Same-text pairs range from
+0.999304 to 0.999999 cosine while different-text pairs range from 0.701021 to
+0.861856, leaving a 0.137447 separation margin with no overlap.
+
+Use `--cosine-min 0.999` as the default gate. Use `--require-identical` only
+when both runs use the same packing configuration. Do not diff stored vectors to
+detect drift, and do not expect re-embedding to reproduce them bit-for-bit after
+`--max-inputs-per-request` or `--max-tokens-per-request` changes.
+
+See [Evidence, errors, and operations](docs/05-evidence-and-operations.md#vector-equivalence-across-routes)
+for the full tables, formulas, and claim status.
 
 RPM and TPM are dependent only when quota is allocated: each model capacity
 unit supplies a predefined RPM/TPM pair, so they cannot be configured
